@@ -90,6 +90,7 @@ const testTypes = [
       },
       { key: 'samplingVolume', label: 'Sampling Volume', unit: 'L', type: 'number', required: false },
       { key: 'departmentArea', label: 'Department / Area', type: 'text', required: false },
+      { key: 'ahuNumber', label: 'AHU No.', type: 'text', required: false },
     ],
     tableColumns: [
       { key: 'srNo', label: 'Sr. No.', type: 'text', required: true },
@@ -124,6 +125,7 @@ const testTypes = [
       },
       { key: 'departmentArea', label: 'Department / Area', type: 'text', required: false },
       { key: 'numberOfFilters', label: 'No. of Filters', type: 'number', required: false },
+      { key: 'ahuNumber', label: 'AHU No.', type: 'text', required: false },
       { key: 'guideline', label: 'Guideline', type: 'text', required: false, defaultValue: 'ISO 14644-3' },
     ],
     tableColumns: [

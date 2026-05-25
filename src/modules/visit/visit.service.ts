@@ -57,7 +57,7 @@ export class VisitService {
           engineer: { $arrayElemAt: [{ $map: { input: '$engineer', as: 'e', in: { id: '$$e._id', name: '$$e.name', email: '$$e.email' } } }, 0] },
         },
       },
-      { $sort: { scheduledDate: -1 } },
+      { $sort: { scheduledDate: -1, createdAt: -1 } },
     ]);
   }
 

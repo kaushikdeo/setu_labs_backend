@@ -40,6 +40,8 @@ export interface ITestType extends Document {
     thresholds: Record<string, number>;
   };
   calculationKey: string;
+  showEquipmentDetails?: boolean;
+  showGraph?: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -95,6 +97,8 @@ const testTypeSchema = new Schema<ITestType>(
       thresholds: { type: Schema.Types.Mixed, default: {} },
     },
     calculationKey: { type: String, default: '' },
+    showEquipmentDetails: { type: Boolean, default: true },
+    showGraph: { type: Boolean, default: true },
     isActive: { type: Boolean, default: true },
   },
   {

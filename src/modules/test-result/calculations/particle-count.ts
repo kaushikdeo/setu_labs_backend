@@ -9,7 +9,8 @@ export interface ParticleCountReadings {
   isoClass?: string;
   samplingVolume?: number;
   departmentArea?: string;
-  rows: ParticleCountRow[];
+  rows?: ParticleCountRow[];
+  sections?: Array<{ fields: Record<string, any>; rows: ParticleCountRow[] }>;
 }
 
 const ISO_LIMITS: Record<string, { um_0_5: number; um_5: number }> = {
@@ -23,6 +24,30 @@ const ISO_LIMITS: Record<string, { um_0_5: number; um_5: number }> = {
   'Grade D': { um_0_5: 10000000, um_5: 100000 },
 };
 
+function enrichRow(
+  row: ParticleCountRow,
+  limits: { um_0_5: number; um_5: number } | null,
+  failReasons: string[],
+): ParticleCountRow & { result_0_5um: string; result_5um: string } {
+  const result_0_5um =
+    limits && typeof row.count_0_5um === 'number'
+      ? row.count_0_5um <= limits.um_0_5 ? 'Pass' : 'Fail'
+      : 'N/A';
+  const result_5um =
+    limits && typeof row.count_5um === 'number'
+      ? row.count_5um <= limits.um_5 ? 'Pass' : 'Fail'
+      : 'N/A';
+
+  if (result_0_5um === 'Fail') {
+    failReasons.push(`"${row.locationName}": ≥0.5µm count ${row.count_0_5um} > limit ${limits?.um_0_5}`);
+  }
+  if (result_5um === 'Fail') {
+    failReasons.push(`"${row.locationName}": ≥5µm count ${row.count_5um} > limit ${limits?.um_5}`);
+  }
+
+  return { ...row, result_0_5um, result_5um };
+}
+
 export function calculate(
   readings: ParticleCountReadings,
   _thresholds: Record<string, number>,
@@ -30,25 +55,27 @@ export function calculate(
   const limits = ISO_LIMITS[readings.isoClass ?? ''] ?? null;
   const failReasons: string[] = [];
 
-  const enriched = (readings.rows || []).map((row) => {
-    const result_0_5um =
-      limits && typeof row.count_0_5um === 'number'
-        ? row.count_0_5um <= limits.um_0_5 ? 'Pass' : 'Fail'
-        : 'N/A';
-    const result_5um =
-      limits && typeof row.count_5um === 'number'
-        ? row.count_5um <= limits.um_5 ? 'Pass' : 'Fail'
-        : 'N/A';
+  // Support both flat (readings.rows) and sectioned (readings.sections) form submissions
+  if (Array.isArray(readings.sections) && readings.sections.length > 0) {
+    const enrichedSections = readings.sections.map((section) => ({
+      fields: section.fields,
+      rows: (section.rows ?? []).map((row) => enrichRow(row, limits, failReasons)),
+    }));
 
-    if (result_0_5um === 'Fail') {
-      failReasons.push(`"${row.locationName}": ≥0.5µm count ${row.count_0_5um} > limit ${limits?.um_0_5}`);
-    }
-    if (result_5um === 'Fail') {
-      failReasons.push(`"${row.locationName}": ≥5µm count ${row.count_5um} > limit ${limits?.um_5}`);
-    }
+    const result: 'Pass' | 'Fail' = failReasons.length === 0 ? 'Pass' : 'Fail';
+    const conclusion =
+      result === 'Pass'
+        ? `All particle counts are within ${readings.isoClass ?? 'specified'} limits. Test PASSED.`
+        : `Test FAILED: ${failReasons.join('; ')}`;
 
-    return { ...row, result_0_5um, result_5um };
-  });
+    return {
+      calculatedValues: { sections: enrichedSections, limits: limits ?? {} },
+      result,
+      conclusion,
+    };
+  }
+
+  const enriched = (readings.rows || []).map((row) => enrichRow(row, limits, failReasons));
 
   const result: 'Pass' | 'Fail' = failReasons.length === 0 ? 'Pass' : 'Fail';
   const conclusion =

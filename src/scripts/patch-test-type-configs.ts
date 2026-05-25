@@ -51,6 +51,7 @@ const HEPA_CONFIG = {
     { key: 'isoClass', label: 'Class', type: 'select', required: false, options: ['ISO 5', 'ISO 6', 'ISO 7', 'ISO 8', 'Grade A', 'Grade B', 'Grade C', 'Grade D'] },
     { key: 'departmentArea', label: 'Department / Area', type: 'text', required: false },
     { key: 'numberOfFilters', label: 'No. of Filters', type: 'number', required: false },
+    { key: 'ahuNumber', label: 'AHU No.', type: 'text', required: false },
     { key: 'guideline', label: 'Guideline', type: 'text', required: false, defaultValue: 'ISO 14644-3' },
   ],
   tableColumns: [
@@ -72,6 +73,7 @@ const PARTICLE_CONFIG = {
     { key: 'isoClass', label: 'ISO Class', type: 'select', required: true, options: ['ISO 5', 'ISO 6', 'ISO 7', 'ISO 8', 'Grade A', 'Grade B', 'Grade C', 'Grade D'] },
     { key: 'samplingVolume', label: 'Sampling Volume', unit: 'L', type: 'number', required: false },
     { key: 'departmentArea', label: 'Department / Area', type: 'text', required: false },
+    { key: 'ahuNumber', label: 'AHU No.', type: 'text', required: false },
   ],
   tableColumns: [
     { key: 'srNo', label: 'Sr. No.', type: 'text', required: true },
