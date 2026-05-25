@@ -4,7 +4,7 @@ import { StatsService } from './stats.service';
 const statsService = new StatsService();
 
 export class StatsController {
-  getDashboardStats = async (req: Request, res: Response, next: NextFunction) => {
+  getDashboardStats = async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const stats = await statsService.getDashboardStats();
       res.status(200).json({

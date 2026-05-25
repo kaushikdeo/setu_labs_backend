@@ -1,7 +1,6 @@
 import os from 'os';
 import { UserModel } from '../user/user.model';
 import { AuditLogModel } from '../audit/audit.model';
-import { OrganizationModel } from '../organization/organization.model';
 import { SiteModel } from '../customer/site.model';
 import { logger } from '../../config/logger';
 

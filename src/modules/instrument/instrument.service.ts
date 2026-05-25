@@ -50,11 +50,8 @@ export class InstrumentService {
     const now = new Date();
     if (instrument.status !== InstrumentStatus.ACTIVE) return false;
     if (instrument.calibrationDueDate < now) {
-      // Auto-update status if expired
-      if (instrument.status !== InstrumentStatus.EXPIRED) {
-        instrument.status = InstrumentStatus.EXPIRED;
-        await instrument.save();
-      }
+      instrument.status = InstrumentStatus.EXPIRED;
+      await instrument.save();
       return false;
     }
 
