@@ -5,7 +5,8 @@
 This Express/TypeScript backend is deployed to Vercel as a **serverless function**.
 
 - `api/index.ts` — Vercel entry point; wraps the Express `app` as a serverless handler
-- `vercel.json` — routes all `/*` requests to `api/index.ts`
+- `vercel.json` — tells `@vercel/node` to compile `api/index.ts` directly and routes all `/*` to it
+- `@vercel/node` handles TypeScript compilation internally — no custom `buildCommand` needed
 - DB connection uses a module-level singleton (`isConnected` flag) to avoid reconnecting on every warm invocation
 
 ## Code Changes Made for Vercel Compatibility
@@ -16,7 +17,7 @@ This Express/TypeScript backend is deployed to Vercel as a **serverless function
 | `package.json` | `prepare` script guarded against `CI` / `VERCEL` env vars so husky doesn't run on Vercel build |
 | `tsconfig.json` | `api/**/*` added to `include` array |
 | `api/index.ts` | New — Vercel serverless handler |
-| `vercel.json` | New — Vercel build + routing config |
+| `vercel.json` | New — points `@vercel/node` at `api/index.ts`; no custom buildCommand |
 
 ## Step-by-Step Deployment
 
