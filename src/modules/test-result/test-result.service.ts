@@ -1,0 +1,217 @@
+import { Types } from 'mongoose';
+import { TaskTestResultModel, ITaskTestResult } from './test-result.model';
+import { TestTypeModel } from '../test-type/test-type.model';
+import { VisitTaskModel } from '../visit/visit-task.model';
+import { VisitModel } from '../visit/visit.model';
+import { AppError } from '../../utils/app-error';
+import { calculate as calcAirVelocity } from './calculations/air-velocity-acph-pao';
+import { calculate as calcParticleCount } from './calculations/particle-count';
+import { calculate as calcHepaFilter } from './calculations/hepa-filter-integrity';
+
+type CalcFn = (readings: any, thresholds: Record<string, any>, testType?: any) => {
+  calculatedValues: Record<string, any>;
+  result: 'Pass' | 'Fail';
+  conclusion: string;
+};
+
+const calcRegistry: Record<string, CalcFn> = {
+  air_velocity_acph_pao: calcAirVelocity,
+  particle_count: calcParticleCount,
+  hepa_filter_integrity: calcHepaFilter,
+};
+
+async function generateReportNumber(visitTaskId: string): Promise<string> {
+  const task = await VisitTaskModel.findById(visitTaskId).populate({
+    path: 'visitId',
+    populate: { path: 'customerId', model: 'Customer', select: 'code' },
+  });
+  if (!task) throw new AppError(404, 'Task not found');
+
+  const visit = await VisitModel.findById(task.visitId).populate('customerId');
+  const customerCode = (visit as any)?.customerId?.code ?? 'UNK';
+  const year = new Date().getFullYear();
+  const count = await TaskTestResultModel.countDocuments();
+  const seq = String(count + 1).padStart(3, '0');
+  return `SETU/${customerCode}/VAL/${year}/${seq}`;
+}
+
+export class TestResultService {
+  async getByTask(visitTaskId: string): Promise<any[]> {
+    return TaskTestResultModel.aggregate([
+      { $match: { visitTaskId: new Types.ObjectId(visitTaskId) } },
+      {
+        $lookup: {
+          from: 'testtypes',
+          localField: 'testTypeId',
+          foreignField: '_id',
+          as: 'testType',
+        },
+      },
+      {
+        $lookup: {
+          from: 'masterinstruments',
+          localField: 'instrumentId',
+          foreignField: '_id',
+          as: 'instrument',
+        },
+      },
+      {
+        $project: {
+          id: '$_id',
+          _id: 0,
+          visitTaskId: 1,
+          testTypeId: 1,
+          instrumentId: 1,
+          reportNumber: 1,
+          readings: 1,
+          calculatedValues: 1,
+          result: 1,
+          conclusion: 1,
+          createdBy: 1,
+          completedAt: 1,
+          createdAt: 1,
+          testType: { $arrayElemAt: [{ $map: { input: '$testType', as: 't', in: { id: '$$t._id', code: '$$t.code', name: '$$t.name' } } }, 0] },
+          instrument: {
+            $arrayElemAt: [
+              {
+                $map: {
+                  input: '$instrument',
+                  as: 'i',
+                  in: {
+                    id: '$$i._id',
+                    name: '$$i.name',
+                    code: '$$i.code',
+                    make: '$$i.make',
+                    model: '$$i.model',
+                    serialNumber: '$$i.serialNumber',
+                    lastCalibrationDate: '$$i.lastCalibrationDate',
+                    calibrationDueDate: '$$i.calibrationDueDate',
+                  },
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+      { $sort: { createdAt: 1 } },
+    ]);
+  }
+
+  async getById(id: string): Promise<any> {
+    const results = await TaskTestResultModel.aggregate([
+      { $match: { _id: new Types.ObjectId(id) } },
+      {
+        $lookup: {
+          from: 'testtypes',
+          localField: 'testTypeId',
+          foreignField: '_id',
+          as: 'testType',
+        },
+      },
+      {
+        $lookup: {
+          from: 'masterinstruments',
+          localField: 'instrumentId',
+          foreignField: '_id',
+          as: 'instrument',
+        },
+      },
+      {
+        $lookup: {
+          from: 'visittasks',
+          localField: 'visitTaskId',
+          foreignField: '_id',
+          as: 'task',
+        },
+      },
+      {
+        $project: {
+          id: '$_id',
+          _id: 0,
+          visitTaskId: 1,
+          testTypeId: 1,
+          instrumentId: 1,
+          reportNumber: 1,
+          readings: 1,
+          calculatedValues: 1,
+          result: 1,
+          conclusion: 1,
+          createdBy: 1,
+          completedAt: 1,
+          createdAt: 1,
+          testType: { $arrayElemAt: ['$testType', 0] },
+          instrument: {
+            $arrayElemAt: [
+              {
+                $map: {
+                  input: '$instrument',
+                  as: 'i',
+                  in: {
+                    id: '$$i._id',
+                    name: '$$i.name',
+                    code: '$$i.code',
+                    make: '$$i.make',
+                    model: '$$i.model',
+                    serialNumber: '$$i.serialNumber',
+                    lastCalibrationDate: '$$i.lastCalibrationDate',
+                    calibrationDueDate: '$$i.calibrationDueDate',
+                  },
+                },
+              },
+              0,
+            ],
+          },
+          task: { $arrayElemAt: ['$task', 0] },
+        },
+      },
+    ]);
+
+    if (!results.length) throw new AppError(404, 'Test result not found');
+    return results[0];
+  }
+
+  async create(
+    visitTaskId: string,
+    data: { testTypeId: string; instrumentId: string; readings: Record<string, any> },
+    userId: string,
+  ): Promise<ITaskTestResult> {
+    const task = await VisitTaskModel.findById(visitTaskId);
+    if (!task) throw new AppError(404, 'Task not found');
+
+    const testType = await TestTypeModel.findById(data.testTypeId);
+    if (!testType) throw new AppError(404, 'Test type not found');
+
+    const calcFn = calcRegistry[testType.calculationKey];
+    if (!calcFn) throw new AppError(500, `No calculation function for key: ${testType.calculationKey}`);
+
+    const { calculatedValues, result, conclusion } = calcFn(
+      data.readings,
+      testType.acceptanceCriteria.thresholds as Record<string, number>,
+      testType,
+    );
+
+    const reportNumber = await generateReportNumber(visitTaskId);
+
+    const testResult = await TaskTestResultModel.create({
+      visitTaskId,
+      testTypeId: data.testTypeId,
+      instrumentId: data.instrumentId,
+      reportNumber,
+      readings: data.readings,
+      calculatedValues,
+      result,
+      conclusion,
+      createdBy: userId,
+      completedAt: new Date(),
+    });
+
+    // Mark matching plannedTest as completed
+    await VisitTaskModel.findOneAndUpdate(
+      { _id: visitTaskId, 'plannedTests.testTypeId': new Types.ObjectId(data.testTypeId) },
+      { $set: { 'plannedTests.$.status': 'completed' } },
+    );
+
+    return testResult;
+  }
+}

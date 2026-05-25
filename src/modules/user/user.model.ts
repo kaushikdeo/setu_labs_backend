@@ -34,7 +34,19 @@ const userSchema = new Schema<IUser>(
     onboardingCompleted: { type: Boolean, default: false },
     lastLoginAt: { type: Date, default: null },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (_doc, ret) => {
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.passwordHash;
+        delete ret.refreshTokenHash;
+        delete ret.__v;
+        return ret;
+      },
+    },
+  },
 );
 
 

@@ -7,6 +7,11 @@ import userRoutes from './modules/user/user.route';
 import authRoutes from './modules/auth/auth.route';
 import organizationRoutes from './modules/organization/organization.route';
 import statsRoutes from './modules/stats/stats.route';
+import customerRoutes from './modules/customer/customer.route';
+import { equipmentRoutes } from './modules/equipment/equipment.route';
+import { instrumentRoutes } from './modules/instrument/instrument.route';
+import visitRoutes from './modules/visit/visit.route';
+import testTypeRoutes from './modules/test-type/test-type.route';
 
 const app: Application = express();
 
@@ -26,6 +31,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/organization', organizationRoutes);
 app.use('/api/users', authenticate, userRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/equipment', equipmentRoutes);
+app.use('/api/instruments', instrumentRoutes);
+app.use('/api/visits', visitRoutes);
+app.use('/api/test-types', testTypeRoutes);
 
 app.use(errorHandler);
 

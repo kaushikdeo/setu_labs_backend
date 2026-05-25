@@ -7,7 +7,21 @@ export type AuditAction =
   | 'auth.logout'
   | 'auth.token_refresh'
   | 'org.create'
-  | 'org.update';
+  | 'org.update'
+  | 'customer.create'
+  | 'customer.update'
+  | 'site.create'
+  | 'site.update'
+  | 'site.deactivate'
+  | 'equipment.create'
+  | 'equipment.update'
+  | 'equipment.delete'
+  | 'instrument.create'
+  | 'instrument.update'
+  | 'visit.create'
+  | 'visit.update'
+  | 'visit.task.start'
+  | 'visit.task.complete';
 
 export interface IAuditLog extends Document {
   userId: string | null;

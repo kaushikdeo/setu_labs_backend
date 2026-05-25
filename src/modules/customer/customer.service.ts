@@ -1,0 +1,122 @@
+import { CustomerModel, ICustomer } from './customer.model';
+import { SiteModel, ISite } from './site.model';
+import { AppError } from '../../utils/app-error';
+import { logger } from '../../config/logger';
+
+export class CustomerService {
+  // ─── Customer Operations ───────────────────────────────────────────────────
+
+  async createCustomer(data: Partial<ICustomer>, userId: string): Promise<ICustomer> {
+    const code = data.code || `CUST-${Date.now()}`;
+    
+    const existing = await CustomerModel.findOne({ code });
+    if (existing) {
+      throw new AppError(400, 'Customer with this code already exists');
+    }
+
+    const customer = await CustomerModel.create({
+      ...data,
+      code,
+      createdBy: userId,
+    });
+
+    logger.info('Customer created', { customerId: customer._id, createdBy: userId });
+    return customer;
+  }
+
+  async getAllCustomers(): Promise<any[]> {
+    // Return customers with site counts
+    return CustomerModel.aggregate([
+      {
+        $lookup: {
+          from: 'sites',
+          localField: '_id',
+          foreignField: 'customerId',
+          as: 'sites',
+        },
+      },
+      {
+        $project: {
+          id: '$_id',
+          _id: 0,
+          name: 1,
+          code: 1,
+          industryType: 1,
+          status: 1,
+          primaryContactName: 1,
+          primaryContactEmail: 1,
+          primaryContactPhone: 1,
+          city: 1,
+          state: 1,
+          country: 1,
+          siteCount: { $size: '$sites' },
+          createdAt: 1,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+    ]);
+  }
+
+  async getCustomerById(id: string): Promise<ICustomer> {
+    const customer = await CustomerModel.findById(id);
+    if (!customer) {
+      throw new AppError(404, 'Customer not found');
+    }
+    return customer;
+  }
+
+  async updateCustomer(id: string, data: Partial<ICustomer>, userId: string): Promise<ICustomer> {
+    const { _id, id: _, __v, createdAt, updatedAt, createdBy, siteCount, ...updateData } = data as any;
+    const customer = await CustomerModel.findByIdAndUpdate(id, updateData, { new: true });
+    if (!customer) {
+      throw new AppError(404, 'Customer not found');
+    }
+    logger.info('Customer updated', { customerId: id, updatedBy: userId });
+    return customer;
+  }
+
+  // ─── Site Operations ───────────────────────────────────────────────────────
+
+  async createSite(customerId: string, data: Partial<ISite>, userId: string): Promise<ISite> {
+    // Verify customer exists
+    await this.getCustomerById(customerId);
+
+    const code = data.code || `SITE-${Date.now()}`;
+
+    const existing = await SiteModel.findOne({ customerId, code });
+    if (existing) {
+      throw new AppError(400, 'Site with this code already exists for this customer');
+    }
+
+    const site = await SiteModel.create({
+      ...data,
+      code,
+      customerId,
+      createdBy: userId,
+    });
+
+    logger.info('Site created', { siteId: site._id, customerId, createdBy: userId });
+    return site;
+  }
+
+  async getSitesByCustomer(customerId: string): Promise<ISite[]> {
+    return SiteModel.find({ customerId }).sort({ createdAt: -1 });
+  }
+
+  async updateSite(siteId: string, data: Partial<ISite>, userId: string): Promise<ISite> {
+    const site = await SiteModel.findByIdAndUpdate(siteId, data, { new: true });
+    if (!site) {
+      throw new AppError(404, 'Site not found');
+    }
+    logger.info('Site updated', { siteId, updatedBy: userId });
+    return site;
+  }
+
+  async deleteSite(siteId: string, userId: string): Promise<void> {
+    const site = await SiteModel.findByIdAndUpdate(siteId, { isActive: false }, { new: true });
+    if (!site) {
+      throw new AppError(404, 'Site not found');
+    }
+    logger.info('Site deactivated', { siteId, updatedBy: userId });
+  }
+}

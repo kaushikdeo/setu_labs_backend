@@ -201,7 +201,17 @@ const organizationSchema = new Schema<IOrganization>(
 
     createdBy: { type: String, required: true },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (_doc, ret) => {
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.__v;
+        return ret;
+      },
+    },
+  },
 );
 
 export const OrganizationModel = model<IOrganization>('Organization', organizationSchema);
