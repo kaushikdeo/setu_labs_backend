@@ -18,7 +18,7 @@
     "script:seed-test-types": "cross-env NODE_ENV=development ts-node --transpile-only src/scripts/seed-test-types.ts",
     "script:seed-instrument-links": "cross-env NODE_ENV=development ts-node --transpile-only src/scripts/seed-instrument-test-links.ts",
     "script:patch-test-configs": "cross-env NODE_ENV=development ts-node --transpile-only src/scripts/patch-test-type-configs.ts",
-    "prepare": "husky install",
+    "prepare": "node -e \"if (!process.env.CI && !process.env.VERCEL) require('child_process').execSync('husky install', {stdio:'inherit'})\"",
     "preinstall": "npx only-allow pnpm"
   },
   "keywords": [
