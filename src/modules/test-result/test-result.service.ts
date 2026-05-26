@@ -67,6 +67,9 @@ export class TestResultService {
           calculatedValues: 1,
           result: 1,
           conclusion: 1,
+          testPerformedBy: 1,
+          witness: 1,
+          visualInspection: 1,
           createdBy: 1,
           completedAt: 1,
           createdAt: 1,
@@ -137,6 +140,9 @@ export class TestResultService {
           calculatedValues: 1,
           result: 1,
           conclusion: 1,
+          testPerformedBy: 1,
+          witness: 1,
+          visualInspection: 1,
           createdBy: 1,
           completedAt: 1,
           createdAt: 1,
@@ -173,7 +179,7 @@ export class TestResultService {
 
   async create(
     visitTaskId: string,
-    data: { testTypeId: string; instrumentId: string; readings: Record<string, any> },
+    data: { testTypeId: string; instrumentId: string; testPerformedBy?: string; witness?: string; visualInspection?: string; readings: Record<string, any> },
     userId: string,
   ): Promise<ITaskTestResult> {
     const task = await VisitTaskModel.findById(visitTaskId);
@@ -198,6 +204,9 @@ export class TestResultService {
       testTypeId: data.testTypeId,
       instrumentId: data.instrumentId,
       reportNumber,
+      testPerformedBy: data.testPerformedBy,
+      witness: data.witness,
+      visualInspection: data.visualInspection,
       readings: data.readings,
       calculatedValues,
       result,
@@ -213,5 +222,31 @@ export class TestResultService {
     );
 
     return testResult;
+  }
+
+  async recalculate(resultId: string, userId: string): Promise<ITaskTestResult> {
+    const existing = await TaskTestResultModel.findById(resultId);
+    if (!existing) throw new AppError(404, 'Test result not found');
+
+    const testType = await TestTypeModel.findById(existing.testTypeId);
+    if (!testType) throw new AppError(404, 'Test type not found');
+
+    const calcFn = calcRegistry[testType.calculationKey];
+    if (!calcFn) throw new AppError(500, `No calculation function for key: ${testType.calculationKey}`);
+
+    const { calculatedValues, result, conclusion } = calcFn(
+      existing.readings,
+      testType.acceptanceCriteria.thresholds as Record<string, number>,
+      testType,
+    );
+
+    const updated = await TaskTestResultModel.findByIdAndUpdate(
+      resultId,
+      { calculatedValues, result, conclusion },
+      { new: true },
+    );
+
+    logger.info('Test result recalculated', { resultId, result, updatedBy: userId });
+    return updated!;
   }
 }

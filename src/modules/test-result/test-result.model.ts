@@ -5,6 +5,9 @@ export interface ITaskTestResult extends Document {
   testTypeId: Types.ObjectId;
   instrumentId: Types.ObjectId;
   reportNumber: string;
+  testPerformedBy?: string;
+  witness?: string;
+  visualInspection?: string;
   readings: Record<string, any>;
   calculatedValues: Record<string, any>;
   result: 'Pass' | 'Fail';
@@ -21,6 +24,9 @@ const testResultSchema = new Schema<ITaskTestResult>(
     testTypeId: { type: Schema.Types.ObjectId, ref: 'TestType', required: true },
     instrumentId: { type: Schema.Types.ObjectId, ref: 'MasterInstrument', required: true },
     reportNumber: { type: String, required: true, unique: true, trim: true },
+    testPerformedBy: { type: String, trim: true },
+    witness: { type: String, trim: true },
+    visualInspection: { type: String, trim: true },
     readings: { type: Schema.Types.Mixed, required: true },
     calculatedValues: { type: Schema.Types.Mixed, default: {} },
     result: { type: String, enum: ['Pass', 'Fail'], required: true },

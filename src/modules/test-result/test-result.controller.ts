@@ -29,3 +29,12 @@ export const createResult = async (req: Request, res: Response, next: NextFuncti
     next(err);
   }
 };
+
+export const recalculateResult = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await service.recalculate(req.params.resultId, (req as any).user.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};

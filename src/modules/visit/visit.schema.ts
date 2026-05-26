@@ -51,7 +51,7 @@ export const updateTaskSchema = Joi.object({
 
 export const startTaskSchema = Joi.object({
   instrumentId: Joi.string().optional().allow(''),
-  testPerformedBy: Joi.string().required(),
+  testPerformedBy: Joi.string().optional().allow(''),
   witness: Joi.string().optional().allow(''),
   visualInspection: Joi.string().optional().allow(''),
 }).unknown(true);
