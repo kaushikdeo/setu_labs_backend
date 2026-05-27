@@ -14,9 +14,15 @@ const testTypes = [
     acceptanceCriteria: {
       description: 'ACPH ≥ threshold per ISO class; PAO leakage ≤ 0.01%; Air velocity within ±20% of reference',
       thresholds: {
-        minAcph: 20,
-        maxPaoLeakagePercent: 0.01,
-        velocityTolerancePercent: 20,
+        'ISO 5':   { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
+        'ISO 6':   { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
+        'ISO 7':   { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
+        'ISO 8':   { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
+        'Grade A': { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
+        'Grade B': { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
+        'Grade C': { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
+        'Grade D': { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
+        default:   { description: 'ACPH ≥ 20 ACH; PAO leakage ≤ 0.01%', fields: { minAcph: { min: 20 }, maxPaoLeakagePercent: { max: 0.01 } } },
       },
     },
     headerFields: [
@@ -70,14 +76,14 @@ const testTypes = [
     acceptanceCriteria: {
       description: 'All location particle counts must be within ISO 14644-1 class limits',
       thresholds: {
-        'ISO 5_0_5um': 3520,
-        'ISO 5_5um': 29,
-        'ISO 6_0_5um': 35200,
-        'ISO 6_5um': 293,
-        'ISO 7_0_5um': 352000,
-        'ISO 7_5um': 2930,
-        'ISO 8_0_5um': 3520000,
-        'ISO 8_5um': 29300,
+        'ISO 5':   { description: '≥0.5µm ≤ 3,520/m³; ≥5µm ≤ 29/m³',             fields: { count_0_5um: { max: 3520 },      count_5um: { max: 29 } } },
+        'ISO 6':   { description: '≥0.5µm ≤ 35,200/m³; ≥5µm ≤ 293/m³',           fields: { count_0_5um: { max: 35200 },     count_5um: { max: 293 } } },
+        'ISO 7':   { description: '≥0.5µm ≤ 352,000/m³; ≥5µm ≤ 2,930/m³',        fields: { count_0_5um: { max: 352000 },    count_5um: { max: 2930 } } },
+        'ISO 8':   { description: '≥0.5µm ≤ 3,520,000/m³; ≥5µm ≤ 29,300/m³',     fields: { count_0_5um: { max: 3520000 },   count_5um: { max: 29300 } } },
+        'Grade A': { description: '≥0.5µm ≤ 3,520/m³; ≥5µm ≤ 20/m³',             fields: { count_0_5um: { max: 3520 },      count_5um: { max: 20 } } },
+        'Grade B': { description: '≥0.5µm ≤ 352,000/m³; ≥5µm ≤ 2,900/m³',        fields: { count_0_5um: { max: 352000 },    count_5um: { max: 2900 } } },
+        'Grade C': { description: '≥0.5µm ≤ 3,520,000/m³; ≥5µm ≤ 29,000/m³',     fields: { count_0_5um: { max: 3520000 },   count_5um: { max: 29000 } } },
+        'Grade D': { description: '≥0.5µm ≤ 10,000,000/m³; ≥5µm ≤ 100,000/m³',   fields: { count_0_5um: { max: 10000000 },  count_5um: { max: 100000 } } },
       },
     },
     headerFields: [
@@ -112,7 +118,15 @@ const testTypes = [
     acceptanceCriteria: {
       description: 'Filter Integrity % (PAO leakage) must be ≤ 0.01% of upstream concentration',
       thresholds: {
-        maxPaoLeakagePercent: 0.01,
+        'ISO 5':   { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
+        'ISO 6':   { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
+        'ISO 7':   { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
+        'ISO 8':   { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
+        'Grade A': { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
+        'Grade B': { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
+        'Grade C': { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
+        'Grade D': { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
+        default:   { description: 'PAO leakage ≤ 0.01% of upstream concentration', fields: { maxPaoLeakagePercent: { max: 0.01 } } },
       },
     },
     headerFields: [

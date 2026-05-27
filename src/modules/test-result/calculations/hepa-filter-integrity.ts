@@ -13,13 +13,16 @@ export interface HepaFilterReadings {
   rows: HepaFilterRow[];
 }
 
-const MAX_LEAKAGE_PERCENT = 0.01;
+type IsoClassEntry = { description?: string; fields: Record<string, { min?: number; max?: number }> };
+type IsoThresholds = Record<string, IsoClassEntry>;
 
 export function calculate(
   readings: HepaFilterReadings,
-  thresholds: Record<string, number>,
+  thresholds: IsoThresholds,
 ): { calculatedValues: Record<string, any>; result: 'Pass' | 'Fail'; conclusion: string } {
-  const maxLeakage = thresholds.maxPaoLeakagePercent ?? MAX_LEAKAGE_PERCENT;
+  const classEntry = thresholds[readings.isoClass ?? ''] ?? thresholds['default'];
+  const fields = classEntry?.fields ?? {};
+  const maxLeakage = fields['maxPaoLeakagePercent']?.max ?? 0.01;
   const failReasons: string[] = [];
 
   const enriched = (readings.rows || []).map((row) => {

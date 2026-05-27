@@ -193,7 +193,7 @@ export class TestResultService {
 
     const { calculatedValues, result, conclusion } = calcFn(
       data.readings,
-      testType.acceptanceCriteria.thresholds as Record<string, number>,
+      testType.acceptanceCriteria.thresholds,
       testType,
     );
 
@@ -236,7 +236,7 @@ export class TestResultService {
 
     const { calculatedValues, result, conclusion } = calcFn(
       existing.readings,
-      testType.acceptanceCriteria.thresholds as Record<string, number>,
+      testType.acceptanceCriteria.thresholds,
       testType,
     );
 

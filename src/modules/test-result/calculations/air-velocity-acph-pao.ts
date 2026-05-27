@@ -79,17 +79,27 @@ function legacyRoomsToSections(rooms: any[]): SectionEntry[] {
   }));
 }
 
+type IsoClassEntry = { description?: string; fields: Record<string, { min?: number; max?: number }> };
+type IsoThresholds = Record<string, IsoClassEntry>;
+
+function resolveThresholds(
+  thresholds: IsoThresholds,
+  isoClass: string | undefined,
+): { minAcph: number; maxPaoLeakagePercent: number } {
+  const classEntry = thresholds[isoClass ?? ''] ?? thresholds['default'];
+  const fields = classEntry?.fields ?? {};
+  return {
+    minAcph: fields['minAcph']?.min ?? 20,
+    maxPaoLeakagePercent: fields['maxPaoLeakagePercent']?.max ?? 0.01,
+  };
+}
+
 export function calculate(
   readings: any,
-  thresholds: Record<string, any>,
+  thresholds: IsoThresholds,
   testType?: any,
 ): { calculatedValues: Record<string, any>; result: 'Pass' | 'Fail'; conclusion: string } {
-  const t = {
-    minAcph:
-      thresholds.actualAcph?.min ?? thresholds.minAcph ?? 20,
-    maxPaoLeakagePercent:
-      thresholds.paoLeakagePercent?.max ?? thresholds.maxPaoLeakagePercent ?? 0.01,
-  };
+  const t = resolveThresholds(thresholds, readings.isoClass);
   const velocityKeys = getVelocityKeys(testType);
   const failReasons: string[] = [];
 

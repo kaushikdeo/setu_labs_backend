@@ -37,7 +37,7 @@ export interface ITestType extends Document {
   resultSummaryColumns?: IResultSummaryColumn[];
   acceptanceCriteria: {
     description: string;
-    thresholds: Record<string, number>;
+    thresholds: Record<string, { description?: string; fields: Record<string, { min?: number; max?: number }> }>;
   };
   calculationKey: string;
   showEquipmentDetails?: boolean;
