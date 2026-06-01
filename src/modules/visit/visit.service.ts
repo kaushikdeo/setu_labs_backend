@@ -1,9 +1,37 @@
 import { Types } from 'mongoose';
-import { VisitModel, IVisit, VisitStatus } from './visit.model';
+import { VisitModel, IVisit, VisitStatus, VisitType } from './visit.model';
 import { VisitTaskModel, IVisitTask, TaskStatus } from './visit-task.model';
 import { MasterInstrumentModel, InstrumentStatus } from '../instrument/instrument.model';
+import { CustomerModel } from '../customer/customer.model';
+import { OrganizationModel, SrCounterScope } from '../organization/organization.model';
+import { TestTypeModel } from '../test-type/test-type.model';
+import { TaskTestResultModel } from '../test-result/test-result.model';
+import { srCounterService } from '../sr-counter/sr-counter.service';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
+
+async function buildCounterKey(
+  scope: SrCounterScope,
+  year: number,
+  customerId: string,
+  visitType: VisitType,
+  suffix?: string,
+): Promise<string> {
+  const parts: string[] = [];
+  if (scope === SrCounterScope.PER_YEAR) {
+    parts.push(String(year));
+  } else if (scope === SrCounterScope.PER_YEAR_CUSTOMER) {
+    parts.push(String(year), customerId);
+  } else {
+    parts.push(String(year), customerId, visitType === VisitType.VALIDATION ? 'VALI' : 'CALI');
+  }
+  if (suffix) parts.push(suffix);
+  return parts.join(':');
+}
+
+function padSeq(n: number): string {
+  return String(n).padStart(2, '0');
+}
 
 export class VisitService {
   async getAllVisits(filters: any = {}): Promise<any[]> {
@@ -41,10 +69,31 @@ export class VisitService {
         },
       },
       {
+        $lookup: {
+          from: 'visittasks',
+          let: { visitId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$visitId', '$$visitId'] } } },
+            {
+              $lookup: {
+                from: 'taskTestResults',
+                localField: '_id',
+                foreignField: 'visitTaskId',
+                as: 'results',
+                pipeline: [{ $limit: 1 }],
+              },
+            },
+            { $match: { 'results.0': { $exists: true } } },
+          ],
+          as: 'tasksWithResults',
+        },
+      },
+      {
         $project: {
           id: '$_id',
           _id: 0,
           code: 1,
+          srNumber: 1,
           type: 1,
           scheduledDate: 1,
           completedDate: 1,
@@ -52,6 +101,7 @@ export class VisitService {
           notes: 1,
           createdBy: 1,
           createdAt: 1,
+          hasTestResults: { $gt: [{ $size: '$tasksWithResults' }, 0] },
           customer: { $arrayElemAt: [{ $map: { input: '$customer', as: 'c', in: { id: '$$c._id', name: '$$c.name', code: '$$c.code' } } }, 0] },
           site: { $arrayElemAt: [{ $map: { input: '$site', as: 's', in: { id: '$$s._id', name: '$$s.name', addressLine1: '$$s.addressLine1', addressLine2: '$$s.addressLine2', city: '$$s.city', state: '$$s.state', country: '$$s.country', pincode: '$$s.pincode' } } }, 0] },
           engineer: { $arrayElemAt: [{ $map: { input: '$engineer', as: 'e', in: { id: '$$e._id', name: '$$e.name', email: '$$e.email' } } }, 0] },
@@ -89,10 +139,31 @@ export class VisitService {
         },
       },
       {
+        $lookup: {
+          from: 'visittasks',
+          let: { visitId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$visitId', '$$visitId'] } } },
+            {
+              $lookup: {
+                from: 'taskTestResults',
+                localField: '_id',
+                foreignField: 'visitTaskId',
+                as: 'results',
+                pipeline: [{ $limit: 1 }],
+              },
+            },
+            { $match: { 'results.0': { $exists: true } } },
+          ],
+          as: 'tasksWithResults',
+        },
+      },
+      {
         $project: {
           id: '$_id',
           _id: 0,
           code: 1,
+          srNumber: 1,
           type: 1,
           scheduledDate: 1,
           completedDate: 1,
@@ -103,6 +174,7 @@ export class VisitService {
           customerId: 1,
           siteId: 1,
           assignedEngineerId: 1,
+          hasTestResults: { $gt: [{ $size: '$tasksWithResults' }, 0] },
           customer: { $arrayElemAt: [{ $map: { input: '$customer', as: 'c', in: { id: '$$c._id', name: '$$c.name', code: '$$c.code' } } }, 0] },
           site: { $arrayElemAt: [{ $map: { input: '$site', as: 's', in: { id: '$$s._id', name: '$$s.name', addressLine1: '$$s.addressLine1', addressLine2: '$$s.addressLine2', city: '$$s.city', state: '$$s.state', country: '$$s.country', pincode: '$$s.pincode' } } }, 0] },
           engineer: { $arrayElemAt: [{ $map: { input: '$engineer', as: 'e', in: { id: '$$e._id', name: '$$e.name', email: '$$e.email' } } }, 0] },
@@ -118,12 +190,36 @@ export class VisitService {
 
   async createVisit(data: Partial<IVisit>, userId: string): Promise<IVisit> {
     const code = `VISIT-${Date.now()}`;
+
+    let srNumber: string | undefined;
+    try {
+      const [org, customer] = await Promise.all([
+        OrganizationModel.findOne().lean(),
+        CustomerModel.findById(data.customerId).lean(),
+      ]);
+
+      if (org && customer) {
+        const orgAbbr = org.abbreviation ?? '';
+        const custAbbr = (customer as any).abbreviation ?? '';
+        const typeSegment = data.type === VisitType.VALIDATION ? 'VALI' : 'CALI';
+        const year = new Date().getFullYear();
+        const scope: SrCounterScope = org.srCounterScope ?? SrCounterScope.PER_YEAR;
+        const key = await buildCounterKey(scope, year, (data.customerId as Types.ObjectId).toString(), data.type as VisitType);
+        const seq = await srCounterService.nextSequence(key);
+        const parts = [orgAbbr, custAbbr, typeSegment, String(year), padSeq(seq)].filter(Boolean);
+        srNumber = parts.join('/');
+      }
+    } catch (err) {
+      logger.warn('SR number generation failed, proceeding without it', { err });
+    }
+
     const visit = await VisitModel.create({
       ...data,
       code,
+      srNumber,
       createdBy: userId,
     });
-    logger.info('Visit created', { visitId: visit._id, createdBy: userId });
+    logger.info('Visit created', { visitId: visit._id, srNumber, createdBy: userId });
     return visit;
   }
 
@@ -133,6 +229,23 @@ export class VisitService {
     if (!visit) throw new AppError(404, 'Visit not found');
     logger.info('Visit updated', { visitId: id, updatedBy: userId });
     return visit;
+  }
+
+  async deleteVisit(id: string, userId: string): Promise<void> {
+    const visit = await VisitModel.findById(id);
+    if (!visit) throw new AppError(404, 'Visit not found');
+
+    const taskIds = await VisitTaskModel.find({ visitId: id }, '_id').lean().then((docs) => docs.map((d) => d._id));
+    if (taskIds.length > 0) {
+      const resultCount = await TaskTestResultModel.countDocuments({ visitTaskId: { $in: taskIds } });
+      if (resultCount > 0) {
+        throw new AppError(409, 'Cannot delete: test data has already been recorded for this service request');
+      }
+      await VisitTaskModel.deleteMany({ visitId: id });
+    }
+
+    await VisitModel.findByIdAndDelete(id);
+    logger.info('Visit deleted', { visitId: id, deletedBy: userId });
   }
 
   async getTasksByVisit(visitId: string): Promise<any[]> {
@@ -188,8 +301,45 @@ export class VisitService {
       throw new AppError(400, 'Cannot add tasks to a completed or cancelled visit');
     }
 
+    let plannedTests = (data.plannedTests as any[]) ?? [];
+
+    if (plannedTests.length > 0) {
+      try {
+        const [org, customer] = await Promise.all([
+          OrganizationModel.findOne().lean(),
+          CustomerModel.findById(visit.customerId).lean(),
+        ]);
+
+        if (org && customer) {
+          const orgAbbr = org.abbreviation ?? '';
+          const custAbbr = (customer as any).abbreviation ?? '';
+          const typeSegment = visit.type === VisitType.VALIDATION ? 'VALI' : 'CALI';
+          const year = new Date().getFullYear();
+          const scope: SrCounterScope = org.srCounterScope ?? SrCounterScope.PER_YEAR;
+
+          plannedTests = await Promise.all(
+            plannedTests.map(async (pt) => {
+              try {
+                const testType = await TestTypeModel.findById(pt.testTypeId).lean();
+                const testAbbr = testType?.abbreviation ?? '';
+                const key = await buildCounterKey(scope, year, visit.customerId.toString(), visit.type, testAbbr || undefined);
+                const seq = await srCounterService.nextSequence(key);
+                const parts = [orgAbbr, custAbbr, typeSegment, testAbbr, String(year), padSeq(seq)].filter(Boolean);
+                return { ...pt, srNumber: parts.join('/') };
+              } catch {
+                return pt;
+              }
+            }),
+          );
+        }
+      } catch (err) {
+        logger.warn('Test SR number generation failed, proceeding without it', { err });
+      }
+    }
+
     const task = await VisitTaskModel.create({
       ...data,
+      plannedTests,
       visitId,
       createdBy: userId,
     });

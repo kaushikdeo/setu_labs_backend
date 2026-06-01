@@ -23,6 +23,12 @@ export enum OrganizationStatus {
   INACTIVE = 'inactive',
 }
 
+export enum SrCounterScope {
+  PER_YEAR = 'per_year',
+  PER_YEAR_CUSTOMER = 'per_year_customer',
+  PER_YEAR_CUSTOMER_TYPE = 'per_year_customer_type',
+}
+
 export interface IOrganization extends Document {
   // SECTION 1 — BASIC COMPANY INFORMATION
   companyName: string;
@@ -39,6 +45,8 @@ export interface IOrganization extends Document {
   timezone: string;
   website?: string;
   logoUrl?: string;
+  abbreviation?: string;
+  srCounterScope: SrCounterScope;
 
   // SECTION 2 — COMPLIANCE INFORMATION
   isNablAccredited: boolean;
@@ -130,6 +138,12 @@ const organizationSchema = new Schema<IOrganization>(
     timezone: { type: String, required: true, trim: true },
     website: { type: String, trim: true },
     logoUrl: { type: String, trim: true },
+    abbreviation: { type: String, trim: true, uppercase: true, maxlength: 6 },
+    srCounterScope: {
+      type: String,
+      enum: Object.values(SrCounterScope),
+      default: SrCounterScope.PER_YEAR,
+    },
 
     // SECTION 2
     isNablAccredited: { type: Boolean, default: false },

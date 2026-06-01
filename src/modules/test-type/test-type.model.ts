@@ -28,6 +28,7 @@ export interface IResultSummaryColumn {
 export interface ITestType extends Document {
   code: string;
   name: string;
+  abbreviation?: string;
   description?: string;
   category: 'validation' | 'calibration';
   requiredInstrumentType: string;
@@ -85,6 +86,7 @@ const testTypeSchema = new Schema<ITestType>(
   {
     code: { type: String, required: true, unique: true, trim: true },
     name: { type: String, required: true, trim: true },
+    abbreviation: { type: String, trim: true, uppercase: true, maxlength: 6 },
     description: { type: String, trim: true },
     category: { type: String, enum: ['validation', 'calibration'], required: true, default: 'validation' },
     requiredInstrumentType: { type: String, trim: true, default: '' },

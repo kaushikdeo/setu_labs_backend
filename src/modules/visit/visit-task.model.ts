@@ -11,6 +11,7 @@ export interface IPlannedTest {
   instrumentId: Types.ObjectId;
   testTypeId: Types.ObjectId;
   status: 'pending' | 'completed';
+  srNumber?: string;
 }
 
 export interface IVisitTask extends Document {
@@ -42,6 +43,7 @@ const visitTaskSchema = new Schema<IVisitTask>(
         instrumentId: { type: Schema.Types.ObjectId, ref: 'MasterInstrument', required: true },
         testTypeId: { type: Schema.Types.ObjectId, ref: 'TestType', required: true },
         status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
+        srNumber: { type: String, trim: true },
         _id: false,
       },
     ],

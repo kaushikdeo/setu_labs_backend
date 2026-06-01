@@ -1,5 +1,5 @@
 import Joi from 'joi';
-import { IndustryType, CompanyType, OrganizationStatus } from './organization.model';
+import { IndustryType, CompanyType, OrganizationStatus, SrCounterScope } from './organization.model';
 
 export const createOrganizationSchema = Joi.object({
   // SECTION 1
@@ -17,6 +17,8 @@ export const createOrganizationSchema = Joi.object({
   timezone: Joi.string().required(),
   website: Joi.string().uri().allow('', null).optional(),
   logoUrl: Joi.string().uri().allow('', null).optional(),
+  abbreviation: Joi.string().max(6).allow('', null).optional(),
+  srCounterScope: Joi.string().valid(...Object.values(SrCounterScope)).default(SrCounterScope.PER_YEAR),
 
   // SECTION 2
   isNablAccredited: Joi.boolean().default(false),

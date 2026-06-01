@@ -14,6 +14,7 @@ export enum VisitType {
 
 export interface IVisit extends Document {
   code: string;
+  srNumber?: string;
   customerId: Types.ObjectId;
   siteId: Types.ObjectId;
   type: VisitType;
@@ -30,6 +31,7 @@ export interface IVisit extends Document {
 const visitSchema = new Schema<IVisit>(
   {
     code: { type: String, required: true, unique: true, trim: true },
+    srNumber: { type: String, trim: true },
     customerId: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     siteId: { type: Schema.Types.ObjectId, ref: 'Site', required: true },
     type: { type: String, enum: Object.values(VisitType), required: true },

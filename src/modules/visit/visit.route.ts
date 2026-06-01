@@ -37,6 +37,13 @@ router.patch(
   visitController.updateVisit,
 );
 
+router.delete(
+  '/:id',
+  authenticate,
+  requireRole(UserRole.SUPER_ADMIN),
+  visitController.deleteVisit,
+);
+
 router.get('/:id/tasks', authenticate, visitController.getTasksByVisit);
 
 router.post(

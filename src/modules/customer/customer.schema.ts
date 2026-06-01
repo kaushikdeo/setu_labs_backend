@@ -16,6 +16,7 @@ export const createCustomerSchema = Joi.object({
   state: Joi.string().required(),
   country: Joi.string().required(),
   pincode: Joi.string().required(),
+  abbreviation: Joi.string().max(6).allow('', null).optional(),
   gstin: Joi.string().allow('', null).optional(),
   notes: Joi.string().allow('', null).optional(),
 }).unknown(true);

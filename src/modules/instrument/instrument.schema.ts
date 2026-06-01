@@ -10,6 +10,8 @@ export const createInstrumentSchema = Joi.object({
   lastCalibrationDate: Joi.date().required(),
   calibrationDueDate: Joi.date().required(),
   certificateNumber: Joi.string().required(),
+  certificateFileUrl: Joi.string().uri().allow('', null).optional(),
+  certificateFilePublicId: Joi.string().allow('', null).optional(),
   accuracy: Joi.string().allow('', null).optional(),
   range: Joi.string().allow('', null).optional(),
   status: Joi.string().valid(...Object.values(InstrumentStatus)).default(InstrumentStatus.ACTIVE),

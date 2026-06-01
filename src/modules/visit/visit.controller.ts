@@ -50,6 +50,18 @@ export class VisitController {
     }
   };
 
+  deleteVisit = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await visitService.deleteVisit(req.params.id, req.user!.id);
+      await auditService.logEvent('visit.delete', req, req.user!.id, {
+        visitId: req.params.id,
+      });
+      res.status(200).json({ success: true, message: 'Service request deleted' });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   getTasksByVisit = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tasks = await visitService.getTasksByVisit(req.params.id);

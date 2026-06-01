@@ -12,6 +12,7 @@ import { equipmentRoutes } from './modules/equipment/equipment.route';
 import { instrumentRoutes } from './modules/instrument/instrument.route';
 import visitRoutes from './modules/visit/visit.route';
 import testTypeRoutes from './modules/test-type/test-type.route';
+import uploadRoutes from './modules/storage/upload.route';
 
 const app: Application = express();
 
@@ -36,6 +37,7 @@ app.use('/api/equipment', equipmentRoutes);
 app.use('/api/instruments', instrumentRoutes);
 app.use('/api/visits', visitRoutes);
 app.use('/api/test-types', testTypeRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 app.use(errorHandler);
 

@@ -20,6 +20,7 @@ export interface ICustomer extends Document {
   state: string;
   country: string;
   pincode: string;
+  abbreviation?: string;
   gstin?: string;
   notes?: string;
   createdBy: string;
@@ -46,6 +47,7 @@ const customerSchema = new Schema<ICustomer>(
     state: { type: String, required: true, trim: true },
     country: { type: String, required: true, trim: true },
     pincode: { type: String, required: true, trim: true },
+    abbreviation: { type: String, trim: true, uppercase: true, maxlength: 6 },
     gstin: { type: String, trim: true },
     notes: { type: String, trim: true },
     createdBy: { type: String, required: true },

@@ -16,6 +16,8 @@ export interface IMasterInstrument extends Omit<Document, 'model'> {
   lastCalibrationDate: Date;
   calibrationDueDate: Date;
   certificateNumber: string;
+  certificateFileUrl?: string;
+  certificateFilePublicId?: string;
   accuracy?: string;
   range?: string;
   status: InstrumentStatus;
@@ -36,6 +38,8 @@ const instrumentSchema = new Schema<IMasterInstrument>(
     lastCalibrationDate: { type: Date, required: true },
     calibrationDueDate: { type: Date, required: true },
     certificateNumber: { type: String, required: true, trim: true },
+    certificateFileUrl: { type: String, trim: true },
+    certificateFilePublicId: { type: String, trim: true },
     accuracy: { type: String, trim: true },
     range: { type: String, trim: true },
     status: {
