@@ -7,6 +7,23 @@ export enum CustomerStatus {
   SUSPENDED = 'suspended',
 }
 
+export interface ICustomerReportSettings {
+  preparedBy?: boolean;
+  testTakenBy?: boolean;
+  reviewedAndAuthorizedBy?: boolean;
+  verifiedBy?: boolean;
+  approvedBy?: boolean;
+  authorizedBy?: boolean;
+  witnessedBy?: boolean;
+  reviewedBy?: boolean;
+  reviewedByEAM?: boolean;
+  checkedBy?: boolean;
+  dueDate?: boolean;
+  electronicSign?: boolean;
+  withoutElectronicSign?: boolean;
+  signatureImg?: boolean;
+}
+
 export interface ICustomer extends Document {
   name: string;
   code: string;
@@ -23,6 +40,7 @@ export interface ICustomer extends Document {
   abbreviation?: string;
   gstin?: string;
   notes?: string;
+  reportSettings?: ICustomerReportSettings;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -50,6 +68,7 @@ const customerSchema = new Schema<ICustomer>(
     abbreviation: { type: String, trim: true, uppercase: true, maxlength: 6 },
     gstin: { type: String, trim: true },
     notes: { type: String, trim: true },
+    reportSettings: { type: Schema.Types.Mixed, default: {} },
     createdBy: { type: String, required: true },
   },
   {

@@ -19,6 +19,22 @@ export const createCustomerSchema = Joi.object({
   abbreviation: Joi.string().max(6).allow('', null).optional(),
   gstin: Joi.string().allow('', null).optional(),
   notes: Joi.string().allow('', null).optional(),
+  reportSettings: Joi.object({
+    preparedBy: Joi.boolean().default(false),
+    testTakenBy: Joi.boolean().default(false),
+    reviewedAndAuthorizedBy: Joi.boolean().default(false),
+    verifiedBy: Joi.boolean().default(false),
+    approvedBy: Joi.boolean().default(false),
+    authorizedBy: Joi.boolean().default(false),
+    witnessedBy: Joi.boolean().default(false),
+    reviewedBy: Joi.boolean().default(false),
+    reviewedByEAM: Joi.boolean().default(false),
+    checkedBy: Joi.boolean().default(false),
+    dueDate: Joi.boolean().default(false),
+    electronicSign: Joi.boolean().default(false),
+    withoutElectronicSign: Joi.boolean().default(false),
+    signatureImg: Joi.boolean().default(false),
+  }).default({}),
 }).unknown(true);
 
 export const updateCustomerSchema = createCustomerSchema.fork(

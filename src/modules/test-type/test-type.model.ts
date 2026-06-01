@@ -43,6 +43,7 @@ export interface ITestType extends Document {
   calculationKey: string;
   showEquipmentDetails?: boolean;
   showGraph?: boolean;
+  dueDateDays?: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -101,6 +102,7 @@ const testTypeSchema = new Schema<ITestType>(
     calculationKey: { type: String, default: '' },
     showEquipmentDetails: { type: Boolean, default: true },
     showGraph: { type: Boolean, default: true },
+    dueDateDays: { type: Number },
     isActive: { type: Boolean, default: true },
   },
   {

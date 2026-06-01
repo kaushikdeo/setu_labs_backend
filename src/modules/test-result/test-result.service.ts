@@ -239,11 +239,18 @@ export class TestResultService {
       completedAt: new Date(),
     });
 
-    // Mark matching plannedTest as completed
-    await VisitTaskModel.findOneAndUpdate(
-      { _id: visitTaskId, 'plannedTests.testTypeId': new Types.ObjectId(data.testTypeId) },
-      { $set: { 'plannedTests.$.status': 'completed' } },
-    );
+    // Mark matching plannedTest as completed (use string comparison for type safety)
+    const taskDoc = await VisitTaskModel.findById(visitTaskId);
+    if (taskDoc) {
+      const pt = taskDoc.plannedTests.find(
+        (p) => p.testTypeId.toString() === data.testTypeId,
+      );
+      if (pt) {
+        pt.status = 'completed';
+        taskDoc.markModified('plannedTests');
+        await taskDoc.save();
+      }
+    }
 
     return testResult;
   }
