@@ -20,6 +20,29 @@ const calcRegistry: Record<string, CalcFn> = {
   hepa_filter_integrity: calcHepaFilter,
 };
 
+function runCalculation(
+  calcFn: CalcFn,
+  readings: any,
+  thresholds: Record<string, any>,
+  testType?: any,
+): { calculatedValues: Record<string, any>; result: 'Pass' | 'Fail'; conclusion: string } {
+  if (Array.isArray(readings.occupancyGroups) && readings.occupancyGroups.length > 0) {
+    const groups = readings.occupancyGroups.map((group: any) => {
+      const groupReadings = { ...readings, ...group };
+      delete groupReadings.occupancyGroups;
+      const r = calcFn(groupReadings, thresholds, testType);
+      return { label: group.label, ...r };
+    });
+    const result: 'Pass' | 'Fail' = groups.some((g: any) => g.result === 'Fail') ? 'Fail' : 'Pass';
+    return {
+      calculatedValues: { occupancyGroups: groups },
+      result,
+      conclusion: groups.map((g: any) => `${g.label}: ${g.conclusion}`).join(' | '),
+    };
+  }
+  return calcFn(readings, thresholds, testType);
+}
+
 async function generateReportNumber(visitTaskId: string): Promise<string> {
   const task = await VisitTaskModel.findById(visitTaskId).populate({
     path: 'visitId',
@@ -191,7 +214,8 @@ export class TestResultService {
     const calcFn = calcRegistry[testType.calculationKey];
     if (!calcFn) throw new AppError(500, `No calculation function for key: ${testType.calculationKey}`);
 
-    const { calculatedValues, result, conclusion } = calcFn(
+    const { calculatedValues, result, conclusion } = runCalculation(
+      calcFn,
       data.readings,
       testType.acceptanceCriteria.thresholds,
       testType,
@@ -234,7 +258,8 @@ export class TestResultService {
     const calcFn = calcRegistry[testType.calculationKey];
     if (!calcFn) throw new AppError(500, `No calculation function for key: ${testType.calculationKey}`);
 
-    const { calculatedValues, result, conclusion } = calcFn(
+    const { calculatedValues, result, conclusion } = runCalculation(
+      calcFn,
       existing.readings,
       testType.acceptanceCriteria.thresholds,
       testType,

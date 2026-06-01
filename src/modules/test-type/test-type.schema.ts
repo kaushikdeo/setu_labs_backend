@@ -5,8 +5,8 @@ export const createTestTypeSchema = Joi.object({
   name: Joi.string().required(),
   description: Joi.string().optional().allow(''),
   category: Joi.string().valid('validation', 'calibration').required(),
-  requiredInstrumentType: Joi.string().required(),
-  applicableEquipmentTypes: Joi.array().items(Joi.string()).min(1).required(),
+  requiredInstrumentType: Joi.string().optional().allow(''),
+  applicableEquipmentTypes: Joi.array().items(Joi.string()).min(0).optional(),
   isActive: Joi.boolean().optional(),
 }).unknown(true);
 
