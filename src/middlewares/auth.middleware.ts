@@ -8,6 +8,7 @@ interface JwtPayload {
   sub: string;
   email: string;
   role: UserRole;
+  customerId?: string;
 }
 
 export const authenticate = (req: Request, _res: Response, next: NextFunction): void => {
@@ -19,7 +20,12 @@ export const authenticate = (req: Request, _res: Response, next: NextFunction): 
   const token = authHeader.slice(7);
   try {
     const payload = jwt.verify(token, env.jwtSecret) as JwtPayload;
-    req.user = { id: payload.sub, email: payload.email, role: payload.role };
+    req.user = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      customerId: payload.customerId,
+    };
     next();
   } catch {
     next(new AppError(401, 'Invalid or expired token'));

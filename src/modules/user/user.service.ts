@@ -10,6 +10,7 @@ export interface CreateUserDto {
   password: string;
   name: string;
   role?: UserRole;
+  customerId?: string;
 }
 
 export interface SafeUser {
@@ -17,6 +18,7 @@ export interface SafeUser {
   email: string;
   name: string;
   role: UserRole;
+  customerId?: string;
   isActive: boolean;
   onboardingCompleted: boolean;
   lastLoginAt: Date | null;
@@ -29,6 +31,7 @@ function toSafeUser(user: IUser): SafeUser {
     email: user.email,
     name: user.name,
     role: user.role,
+    customerId: user.customerId?.toString() ?? undefined,
     isActive: user.isActive,
     onboardingCompleted: user.onboardingCompleted,
     lastLoginAt: user.lastLoginAt,
@@ -56,13 +59,19 @@ export class UserService {
       throw new AppError(409, 'Email already registered');
     }
 
+    const role = data.role || UserRole.VALIDATION_ENGINEER;
+    if (role === UserRole.CUSTOMER && !data.customerId) {
+      throw new AppError(400, 'customerId is required when creating a customer user');
+    }
+
     const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
     const user = await UserModel.create({
       email: data.email.toLowerCase(),
       name: data.name,
       passwordHash,
-      role: data.role || UserRole.VALIDATION_ENGINEER,
-      onboardingCompleted: true, // Users added by admin don't need onboarding
+      role,
+      customerId: data.customerId ?? undefined,
+      onboardingCompleted: true,
     });
 
     logger.info('User created by admin', { userId: user._id });

@@ -20,8 +20,13 @@ export type AuditAction =
   | 'instrument.update'
   | 'visit.create'
   | 'visit.update'
+  | 'visit.delete'
   | 'visit.task.start'
-  | 'visit.task.complete';
+  | 'visit.task.complete'
+  | 'report.create'
+  | 'report.submit'
+  | 'report.approve'
+  | 'report.reject';
 
 export interface IAuditLog extends Document {
   userId: string | null;

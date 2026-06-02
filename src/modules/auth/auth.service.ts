@@ -26,6 +26,7 @@ function toSafeUser(user: InstanceType<typeof UserModel>): SafeUser {
     email: user.email,
     name: user.name,
     role: user.role,
+    customerId: (user as any).customerId?.toString() ?? undefined,
     isActive: user.isActive,
     onboardingCompleted: user.onboardingCompleted,
     lastLoginAt: user.lastLoginAt,
@@ -33,8 +34,11 @@ function toSafeUser(user: InstanceType<typeof UserModel>): SafeUser {
   };
 }
 
-function signTokenPair(userId: string, email: string, role: UserRole): TokenPair {
-  const accessToken = jwt.sign({ sub: userId, email, role }, env.jwtSecret, {
+function signTokenPair(userId: string, email: string, role: UserRole, customerId?: string): TokenPair {
+  const payload: Record<string, unknown> = { sub: userId, email, role };
+  if (customerId) payload.customerId = customerId;
+
+  const accessToken = jwt.sign(payload, env.jwtSecret, {
     expiresIn: env.jwtExpiresIn,
   } as jwt.SignOptions);
 
@@ -90,10 +94,12 @@ export class AuthService {
       throw new AppError(401, 'Invalid credentials');
     }
 
+    const customerId = (user as any).customerId?.toString();
     const { accessToken, refreshToken } = signTokenPair(
       user._id.toString(),
       user.email,
       user.role,
+      customerId,
     );
 
     user.refreshTokenHash = await bcrypt.hash(refreshToken, SALT_ROUNDS);
@@ -122,10 +128,12 @@ export class AuthService {
       throw new AppError(401, 'Invalid or expired refresh token');
     }
 
+    const customerId = (user as any).customerId?.toString();
     const { accessToken, refreshToken } = signTokenPair(
       user._id.toString(),
       user.email,
       user.role,
+      customerId,
     );
 
     user.refreshTokenHash = await bcrypt.hash(refreshToken, SALT_ROUNDS);

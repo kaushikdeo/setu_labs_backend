@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export enum UserRole {
   SUPER_ADMIN = 'super_admin',
@@ -15,6 +15,7 @@ export interface IUser extends Document {
   name: string;
   passwordHash: string;
   role: UserRole;
+  customerId?: Types.ObjectId;
   refreshTokenHash: string | null;
   isActive: boolean;
   onboardingCompleted: boolean;
@@ -29,6 +30,7 @@ const userSchema = new Schema<IUser>(
     name: { type: String, required: true, trim: true },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: Object.values(UserRole), default: UserRole.VALIDATION_ENGINEER },
+    customerId: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
     refreshTokenHash: { type: String, default: null },
     isActive: { type: Boolean, default: true },
     onboardingCompleted: { type: Boolean, default: false },
@@ -43,6 +45,9 @@ const userSchema = new Schema<IUser>(
         delete ret.passwordHash;
         delete ret.refreshTokenHash;
         delete ret.__v;
+        if (ret.customerId) {
+          ret.customerId = (ret.customerId as { toString(): string }).toString();
+        }
         return ret;
       },
     },
