@@ -14,6 +14,9 @@ import visitRoutes from './modules/visit/visit.route';
 import testTypeRoutes from './modules/test-type/test-type.route';
 import uploadRoutes from './modules/storage/upload.route';
 import reportRoutes from './modules/report/report.route';
+import leadRoutes from './modules/lead/lead.route';
+import prospectRoutes from './modules/prospect/prospect.route';
+import activityRoutes from './modules/activity/activity.route';
 
 const app: Application = express();
 
@@ -40,6 +43,9 @@ app.use('/api/visits', visitRoutes);
 app.use('/api/test-types', testTypeRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/reports', authenticate, reportRoutes);
+app.use('/api/leads', leadRoutes);
+app.use('/api/prospects', prospectRoutes);
+app.use('/api/activities', activityRoutes);
 
 app.use(errorHandler);
 

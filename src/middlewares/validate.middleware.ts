@@ -7,23 +7,39 @@ interface ValidationSchemas {
   query?: Joi.ObjectSchema;
 }
 
+type FieldLocation = 'body' | 'params' | 'query';
+
+interface FieldError {
+  field: string;
+  location: FieldLocation;
+  message: string;
+  type?: string;
+}
+
+function collect(error: Joi.ValidationError | undefined, location: FieldLocation): FieldError[] {
+  if (!error) return [];
+  return error.details.map((d) => ({
+    field: d.path.length ? d.path.join('.') : (d.context?.key as string | undefined) ?? '',
+    location,
+    message: d.message,
+    type: d.type,
+  }));
+}
+
 export const validate = (schemas: Joi.ObjectSchema | ValidationSchemas) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     const schemaMap: ValidationSchemas =
       'validate' in schemas ? { body: schemas as Joi.ObjectSchema } : schemas;
 
-    const errors: string[] = [];
+    const errors: FieldError[] = [];
 
     if (schemaMap.body) {
       const { error, value } = schemaMap.body.validate(req.body, {
         abortEarly: false,
         stripUnknown: true,
       });
-      if (error) {
-        errors.push(...error.details.map((d) => d.message));
-      } else {
-        req.body = value;
-      }
+      if (error) errors.push(...collect(error, 'body'));
+      else req.body = value;
     }
 
     if (schemaMap.params) {
@@ -31,11 +47,8 @@ export const validate = (schemas: Joi.ObjectSchema | ValidationSchemas) => {
         abortEarly: false,
         stripUnknown: true,
       });
-      if (error) {
-        errors.push(...error.details.map((d) => d.message));
-      } else {
-        req.params = value;
-      }
+      if (error) errors.push(...collect(error, 'params'));
+      else req.params = value;
     }
 
     if (schemaMap.query) {
@@ -43,18 +56,16 @@ export const validate = (schemas: Joi.ObjectSchema | ValidationSchemas) => {
         abortEarly: false,
         stripUnknown: true,
       });
-      if (error) {
-        errors.push(...error.details.map((d) => d.message));
-      } else {
-        req.query = value;
-      }
+      if (error) errors.push(...collect(error, 'query'));
+      else req.query = value;
     }
 
     if (errors.length) {
+      const summary = errors.map((e) => `${e.field}: ${e.message}`).join('; ');
       res.status(400).json({
         success: false,
-        message: 'Validation failed',
-        errors: errors.join(', '),
+        message: `Validation failed: ${summary}`,
+        errors,
       });
       return;
     }

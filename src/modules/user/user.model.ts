@@ -8,6 +8,8 @@ export enum UserRole {
   VALIDATION_HEAD = 'validation_head',
   CUSTOMER = 'customer',
   AUDITOR = 'auditor',
+  SALES = 'sales',
+  SALES_MANAGER = 'sales_manager',
 }
 
 export interface IUser extends Document {
