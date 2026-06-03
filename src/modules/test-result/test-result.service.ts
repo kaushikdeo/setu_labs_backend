@@ -4,9 +4,11 @@ import { TestTypeModel } from '../test-type/test-type.model';
 import { VisitTaskModel } from '../visit/visit-task.model';
 import { VisitModel } from '../visit/visit.model';
 import { AppError } from '../../utils/app-error';
+import { logger } from '../../config/logger';
 import { calculate as calcAirVelocity } from './calculations/air-velocity-acph-pao';
 import { calculate as calcParticleCount } from './calculations/particle-count';
 import { calculate as calcHepaFilter } from './calculations/hepa-filter-integrity';
+import { calculate as calcRecoveryTest } from './calculations/recovery-test';
 
 type CalcFn = (readings: any, thresholds: Record<string, any>, testType?: any) => {
   calculatedValues: Record<string, any>;
@@ -18,6 +20,7 @@ const calcRegistry: Record<string, CalcFn> = {
   air_velocity_acph_pao: calcAirVelocity,
   particle_count: calcParticleCount,
   hepa_filter_integrity: calcHepaFilter,
+  recovery_test: calcRecoveryTest,
 };
 
 function runCalculation(

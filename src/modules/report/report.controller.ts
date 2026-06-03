@@ -112,14 +112,17 @@ export class ReportController {
 
   requestChanges = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (!req.user!.customerId) {
+        return next(new AppError(403, 'Customer account not linked'));
+      }
       const report = await reportService.requestChanges(
         req.params.id,
         req.user!.id,
-        req.user!.customerId!,
+        req.user!.customerId,
         req.body.comment,
       );
       res.status(200).json({ success: true, data: report });
-      fireAudit(() => auditService.logEvent('report.request_changes' as any, req, req.user!.id, {
+      fireAudit(() => auditService.logEvent('report.request_changes', req, req.user!.id, {
         reportId: req.params.id,
         comment: req.body.comment,
       }));

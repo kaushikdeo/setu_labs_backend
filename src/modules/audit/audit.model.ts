@@ -26,7 +26,8 @@ export type AuditAction =
   | 'report.create'
   | 'report.submit'
   | 'report.approve'
-  | 'report.reject';
+  | 'report.reject'
+  | 'report.request_changes';
 
 export interface IAuditLog extends Document {
   userId: string | null;

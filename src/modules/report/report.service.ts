@@ -34,7 +34,7 @@ export class ReportService {
 
   async getAllReports(
     callerRole: UserRole,
-    callerUserId: string,
+    _callerUserId: string,
     callerCustomerId?: string,
     filters: any = {},
   ): Promise<any[]> {
