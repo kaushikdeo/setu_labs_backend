@@ -259,22 +259,35 @@ export class ReportService {
   async requestChanges(
     id: string,
     userId: string,
-    callerCustomerId: string,
+    callerRole: UserRole,
+    callerCustomerId: string | undefined,
     comment: string,
   ): Promise<IReport> {
     const report = await ReportModel.findById(id);
     if (!report) throw new AppError(404, 'Report not found');
-    if (report.customerId.toString() !== callerCustomerId) throw new AppError(403, 'Access denied');
-    if (report.status !== ReportStatus.PENDING_APPROVAL) {
-      throw new AppError(400, 'Only pending_approval reports can have changes requested');
+    if (callerRole === UserRole.CUSTOMER) {
+      if (!callerCustomerId || report.customerId.toString() !== callerCustomerId) {
+        throw new AppError(403, 'Access denied');
+      }
+    }
+    if (
+      report.status !== ReportStatus.PENDING_APPROVAL &&
+      report.status !== ReportStatus.APPROVED
+    ) {
+      throw new AppError(400, 'Only pending_approval or approved reports can have changes requested');
     }
 
     const now = new Date();
+    const wasApproved = report.status === ReportStatus.APPROVED;
     report.status = ReportStatus.CHANGES_REQUESTED;
+    if (wasApproved) {
+      report.approvedAt = undefined;
+      report.approvedBy = undefined;
+    }
     report.approvalHistory.push({ action: 'changes_requested', comment, performedBy: userId, performedAt: now });
 
     await report.save();
-    logger.info('Report changes requested', { reportId: id, requestedBy: userId });
+    logger.info('Report changes requested', { reportId: id, requestedBy: userId, wasApproved });
     return report;
   }
 

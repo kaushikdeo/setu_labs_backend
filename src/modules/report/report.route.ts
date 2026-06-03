@@ -54,7 +54,7 @@ router.post(
 
 router.post(
   '/:id/request-changes',
-  requireRole(UserRole.CUSTOMER),
+  requireRole(UserRole.CUSTOMER, UserRole.SUPER_ADMIN, UserRole.VALIDATION_HEAD),
   validate(requestChangesSchema),
   reportController.requestChanges,
 );

@@ -8,3 +8,10 @@ export const createTestResultSchema = Joi.object({
   visualInspection: Joi.string().optional().allow(''),
   readings: Joi.object().required(),
 }).unknown(true);
+
+export const updateTestResultSchema = Joi.object({
+  testPerformedBy: Joi.string().optional().allow(''),
+  witness: Joi.string().optional().allow(''),
+  visualInspection: Joi.string().optional().allow(''),
+  readings: Joi.object().required(),
+}).unknown(true);

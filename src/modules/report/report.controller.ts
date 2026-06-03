@@ -112,12 +112,10 @@ export class ReportController {
 
   requestChanges = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (!req.user!.customerId) {
-        return next(new AppError(403, 'Customer account not linked'));
-      }
       const report = await reportService.requestChanges(
         req.params.id,
         req.user!.id,
+        req.user!.role,
         req.user!.customerId,
         req.body.comment,
       );

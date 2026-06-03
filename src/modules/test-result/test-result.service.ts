@@ -3,6 +3,7 @@ import { TaskTestResultModel, ITaskTestResult } from './test-result.model';
 import { TestTypeModel } from '../test-type/test-type.model';
 import { VisitTaskModel } from '../visit/visit-task.model';
 import { VisitModel } from '../visit/visit.model';
+import { ReportModel, ReportStatus } from '../report/report.model';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
 import { calculate as calcAirVelocity } from './calculations/air-velocity-acph-pao';
@@ -256,6 +257,56 @@ export class TestResultService {
     }
 
     return testResult;
+  }
+
+  async update(
+    resultId: string,
+    data: { testPerformedBy?: string; witness?: string; visualInspection?: string; readings: Record<string, any> },
+    userId: string,
+  ): Promise<ITaskTestResult> {
+    const existing = await TaskTestResultModel.findById(resultId);
+    if (!existing) throw new AppError(404, 'Test result not found');
+
+    const task = await VisitTaskModel.findById(existing.visitTaskId);
+    if (!task) throw new AppError(404, 'Task not found');
+
+    const report = await ReportModel.findOne({ visitId: task.visitId });
+    if (report && report.status === ReportStatus.APPROVED) {
+      throw new AppError(
+        409,
+        'Report is approved. Revert to changes_requested before editing test results.',
+      );
+    }
+
+    const testType = await TestTypeModel.findById(existing.testTypeId);
+    if (!testType) throw new AppError(404, 'Test type not found');
+
+    const calcFn = calcRegistry[testType.calculationKey];
+    if (!calcFn) throw new AppError(500, `No calculation function for key: ${testType.calculationKey}`);
+
+    const { calculatedValues, result, conclusion } = runCalculation(
+      calcFn,
+      data.readings,
+      testType.acceptanceCriteria.thresholds,
+      testType,
+    );
+
+    const updated = await TaskTestResultModel.findByIdAndUpdate(
+      resultId,
+      {
+        readings: data.readings,
+        testPerformedBy: data.testPerformedBy,
+        witness: data.witness,
+        visualInspection: data.visualInspection,
+        calculatedValues,
+        result,
+        conclusion,
+      },
+      { new: true },
+    );
+
+    logger.info('Test result updated', { resultId, result, updatedBy: userId });
+    return updated!;
   }
 
   async recalculate(resultId: string, userId: string): Promise<ITaskTestResult> {

@@ -38,3 +38,12 @@ export const recalculateResult = async (req: Request, res: Response, next: NextF
     next(err);
   }
 };
+
+export const updateResult = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await service.update(req.params.resultId, req.body, (req as any).user.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};

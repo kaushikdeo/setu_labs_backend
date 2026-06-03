@@ -88,9 +88,11 @@ function resolveThresholds(
 ): { minAcph: number; maxPaoLeakagePercent: number } {
   const classEntry = thresholds[isoClass ?? ''] ?? thresholds['default'];
   const fields = classEntry?.fields ?? {};
+  const acphField = fields['actualAcph'] ?? fields['minAcph'];
+  const paoField = fields['paoLeakagePercent'] ?? fields['maxPaoLeakagePercent'];
   return {
-    minAcph: fields['minAcph']?.min ?? 20,
-    maxPaoLeakagePercent: fields['maxPaoLeakagePercent']?.max ?? 0.01,
+    minAcph: acphField?.min ?? 20,
+    maxPaoLeakagePercent: paoField?.max ?? 0.01,
   };
 }
 
