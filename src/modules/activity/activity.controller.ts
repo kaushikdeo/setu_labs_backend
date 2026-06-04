@@ -21,16 +21,13 @@ export class ActivityController {
       const userId = req.user!.id;
       const activity = await activityService.add(req.body, userId);
 
-      if (
-        activity.entityType === 'prospect' &&
-        activity.type === ActivityType.FOLLOW_UP
-      ) {
+      if (activity.entityType === 'prospect' && activity.type === ActivityType.FOLLOW_UP) {
         const meta = activity.metadata as Record<string, unknown> | undefined;
         const mode = typeof meta?.mode === 'string' ? (meta.mode as string) : undefined;
         await prospectService.syncFollowUpFromActivity(
           activity.entityId.toString(),
           activity.occurredAt,
-          mode,
+          mode
         );
       } else if (activity.entityType === 'prospect') {
         await prospectService.touchLastActivity(activity.entityId.toString());

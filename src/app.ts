@@ -16,6 +16,9 @@ import uploadRoutes from './modules/storage/upload.route';
 import reportRoutes from './modules/report/report.route';
 import leadRoutes from './modules/lead/lead.route';
 import prospectRoutes from './modules/prospect/prospect.route';
+import opportunityRoutes from './modules/opportunity/opportunity.route';
+import quoteRoutes from './modules/quote/quote.route';
+import tcTemplateRoutes from './modules/tc-template/tc-template.route';
 import activityRoutes from './modules/activity/activity.route';
 
 const app: Application = express();
@@ -45,6 +48,9 @@ app.use('/api/uploads', uploadRoutes);
 app.use('/api/reports', authenticate, reportRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/prospects', prospectRoutes);
+app.use('/api/opportunities', opportunityRoutes);
+app.use('/api/quotes', quoteRoutes);
+app.use('/api/tc-templates', tcTemplateRoutes);
 app.use('/api/activities', activityRoutes);
 
 app.use(errorHandler);

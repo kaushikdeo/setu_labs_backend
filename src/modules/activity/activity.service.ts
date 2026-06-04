@@ -16,7 +16,11 @@ export interface CreateActivityInput {
 }
 
 export class ActivityService {
-  async list(entityType: ActivityEntityType, entityId: string, type?: ActivityType): Promise<unknown[]> {
+  async list(
+    entityType: ActivityEntityType,
+    entityId: string,
+    type?: ActivityType
+  ): Promise<unknown[]> {
     if (!Types.ObjectId.isValid(entityId)) throw new AppError(400, 'Invalid entityId');
     const eid = new Types.ObjectId(entityId);
 
@@ -106,10 +110,9 @@ export class ActivityService {
     type: ActivityType,
     title: string,
     extras: Partial<Pick<IActivity, 'description' | 'occurredAt' | 'metadata'>> = {},
-    userId = 'system',
+    userId = 'system'
   ): Promise<IActivity> {
-    const eid =
-      typeof entityId === 'string' ? new Types.ObjectId(entityId) : entityId;
+    const eid = typeof entityId === 'string' ? new Types.ObjectId(entityId) : entityId;
     return ActivityModel.create({
       entityType,
       entityId: eid,
@@ -128,10 +131,13 @@ export class ActivityService {
     if (!res) throw new AppError(404, 'Activity not found');
   }
 
-  async relinkLeadActivitiesToProspect(leadId: Types.ObjectId, prospectId: Types.ObjectId): Promise<void> {
+  async relinkLeadActivitiesToProspect(
+    leadId: Types.ObjectId,
+    prospectId: Types.ObjectId
+  ): Promise<void> {
     await ActivityModel.updateMany(
       { entityType: 'lead', entityId: leadId },
-      { $set: { linkedProspectId: prospectId } },
+      { $set: { linkedProspectId: prospectId } }
     );
   }
 }

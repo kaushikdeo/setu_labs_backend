@@ -4,19 +4,23 @@ import { ActivityType } from './activity.model';
 const objectIdPattern = /^[0-9a-fA-F]{24}$/;
 
 export const listActivitiesQuerySchema = Joi.object({
-  entityType: Joi.string().valid('lead', 'prospect').required(),
+  entityType: Joi.string().valid('lead', 'prospect', 'opportunity').required(),
   entityId: Joi.string().pattern(objectIdPattern).required().messages({
     'string.pattern.base': 'entityId must be a valid id',
   }),
-  type: Joi.string().valid(...Object.values(ActivityType)).optional(),
+  type: Joi.string()
+    .valid(...Object.values(ActivityType))
+    .optional(),
 });
 
 export const createActivitySchema = Joi.object({
-  entityType: Joi.string().valid('lead', 'prospect').required(),
+  entityType: Joi.string().valid('lead', 'prospect', 'opportunity').required(),
   entityId: Joi.string().pattern(objectIdPattern).required().messages({
     'string.pattern.base': 'entityId must be a valid id',
   }),
-  type: Joi.string().valid(...Object.values(ActivityType)).required(),
+  type: Joi.string()
+    .valid(...Object.values(ActivityType))
+    .required(),
   title: Joi.string().min(1).required(),
   description: Joi.string().optional().allow('', null),
   direction: Joi.string().valid('in', 'out').optional(),

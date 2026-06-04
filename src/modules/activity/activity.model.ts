@@ -1,6 +1,6 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
-export type ActivityEntityType = 'lead' | 'prospect';
+export type ActivityEntityType = 'lead' | 'prospect' | 'opportunity';
 
 export enum ActivityType {
   CALL = 'call',
@@ -39,7 +39,7 @@ export interface IActivity extends Document {
 
 const activitySchema = new Schema<IActivity>(
   {
-    entityType: { type: String, enum: ['lead', 'prospect'], required: true },
+    entityType: { type: String, enum: ['lead', 'prospect', 'opportunity'], required: true },
     entityId: { type: Schema.Types.ObjectId, required: true },
     linkedProspectId: { type: Schema.Types.ObjectId, default: null },
     type: { type: String, enum: Object.values(ActivityType), required: true },
@@ -65,7 +65,7 @@ const activitySchema = new Schema<IActivity>(
         return ret;
       },
     },
-  },
+  }
 );
 
 activitySchema.index({ entityType: 1, entityId: 1, occurredAt: -1 });
