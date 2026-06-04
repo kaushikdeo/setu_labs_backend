@@ -187,27 +187,47 @@ export class ReportService {
   }
 
   async submitForApproval(id: string, userId: string, comment?: string): Promise<IReport> {
-    const report = await ReportModel.findById(id);
-    if (!report) throw new AppError(404, 'Report not found');
-    if (
-      report.status !== ReportStatus.DRAFT &&
-      report.status !== ReportStatus.REJECTED &&
-      report.status !== ReportStatus.CHANGES_REQUESTED
-    ) {
+    const submittableStatuses = [
+      ReportStatus.DRAFT,
+      ReportStatus.REJECTED,
+      ReportStatus.CHANGES_REQUESTED,
+    ];
+    const current = await ReportModel.findById(id).select('status');
+    if (!current) throw new AppError(404, 'Report not found');
+    if (!submittableStatuses.includes(current.status)) {
       throw new AppError(400, 'Only draft, rejected, or changes_requested reports can be submitted for approval');
     }
 
     const now = new Date();
-    const action =
-      report.status === ReportStatus.DRAFT ? 'submitted' : 'resubmitted';
-    report.status = ReportStatus.PENDING_APPROVAL;
-    report.submittedForApprovalAt = now;
-    report.submittedBy = userId;
-    report.approvalHistory.push({ action, comment, performedBy: userId, performedAt: now });
+    const action = current.status === ReportStatus.DRAFT ? 'submitted' : 'resubmitted';
 
-    await report.save();
+    const report = await ReportModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(id), status: { $in: submittableStatuses } },
+      {
+        $set: {
+          status: ReportStatus.PENDING_APPROVAL,
+          submittedForApprovalAt: now,
+          submittedBy: userId,
+        },
+        $push: { approvalHistory: { action, comment, performedBy: userId, performedAt: now } },
+      },
+      { new: true },
+    );
+    if (!report) throw new AppError(400, 'Only draft, rejected, or changes_requested reports can be submitted for approval');
+
     logger.info('Report submitted for approval', { reportId: id, submittedBy: userId });
     return report;
+  }
+
+  private async assertPendingDecision(
+    id: string,
+    callerCustomerId: string,
+    notPendingMessage: string,
+  ): Promise<never> {
+    const existing = await ReportModel.findById(id).select('customerId status');
+    if (!existing) throw new AppError(404, 'Report not found');
+    if (existing.customerId.toString() !== callerCustomerId) throw new AppError(403, 'Access denied');
+    throw new AppError(400, notPendingMessage);
   }
 
   async approveReport(
@@ -216,22 +236,25 @@ export class ReportService {
     callerCustomerId: string,
     comment?: string,
   ): Promise<IReport> {
-    const report = await ReportModel.findById(id);
-    if (!report) throw new AppError(404, 'Report not found');
-    if (report.customerId.toString() !== callerCustomerId) throw new AppError(403, 'Access denied');
-    if (report.status !== ReportStatus.PENDING_APPROVAL) {
-      throw new AppError(400, 'Only pending_approval reports can be approved');
+    const now = new Date();
+    const report = await ReportModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(id),
+        customerId: new Types.ObjectId(callerCustomerId),
+        status: ReportStatus.PENDING_APPROVAL,
+      },
+      {
+        $set: { status: ReportStatus.APPROVED, approvedAt: now, approvedBy: userId },
+        $push: { approvalHistory: { action: 'approved', comment, performedBy: userId, performedAt: now } },
+      },
+      { new: true },
+    );
+    if (!report) {
+      await this.assertPendingDecision(id, callerCustomerId, 'Only pending_approval reports can be approved');
     }
 
-    const now = new Date();
-    report.status = ReportStatus.APPROVED;
-    report.approvedAt = now;
-    report.approvedBy = userId;
-    report.approvalHistory.push({ action: 'approved', comment, performedBy: userId, performedAt: now });
-
-    await report.save();
     logger.info('Report approved', { reportId: id, approvedBy: userId });
-    return report;
+    return report!;
   }
 
   async rejectReport(
@@ -240,20 +263,25 @@ export class ReportService {
     callerCustomerId: string,
     comment: string,
   ): Promise<IReport> {
-    const report = await ReportModel.findById(id);
-    if (!report) throw new AppError(404, 'Report not found');
-    if (report.customerId.toString() !== callerCustomerId) throw new AppError(403, 'Access denied');
-    if (report.status !== ReportStatus.PENDING_APPROVAL) {
-      throw new AppError(400, 'Only pending_approval reports can be rejected');
+    const now = new Date();
+    const report = await ReportModel.findOneAndUpdate(
+      {
+        _id: new Types.ObjectId(id),
+        customerId: new Types.ObjectId(callerCustomerId),
+        status: ReportStatus.PENDING_APPROVAL,
+      },
+      {
+        $set: { status: ReportStatus.REJECTED },
+        $push: { approvalHistory: { action: 'rejected', comment, performedBy: userId, performedAt: now } },
+      },
+      { new: true },
+    );
+    if (!report) {
+      await this.assertPendingDecision(id, callerCustomerId, 'Only pending_approval reports can be rejected');
     }
 
-    const now = new Date();
-    report.status = ReportStatus.REJECTED;
-    report.approvalHistory.push({ action: 'rejected', comment, performedBy: userId, performedAt: now });
-
-    await report.save();
     logger.info('Report rejected', { reportId: id, rejectedBy: userId });
-    return report;
+    return report!;
   }
 
   async requestChanges(
