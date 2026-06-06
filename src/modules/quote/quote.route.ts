@@ -30,6 +30,7 @@ const deleteRoles = [UserRole.SUPER_ADMIN, UserRole.SALES_MANAGER] as const;
 
 router.get('/', validate({ query: listQuotesQuerySchema }), controller.list);
 router.get('/pending-approvals', controller.pendingApprovals);
+router.get('/:id/pdf', controller.downloadPdf);
 router.get('/:id', controller.getById);
 
 router.post('/', requireRole(...writeRoles), validate(createQuoteSchema), controller.create);

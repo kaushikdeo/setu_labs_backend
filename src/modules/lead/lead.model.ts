@@ -83,6 +83,7 @@ export interface ILead extends Document {
   email?: string;
   company?: string;
   designation?: string;
+  department?: string;
   city?: string;
   state?: string;
   source: LeadSource;
@@ -118,6 +119,7 @@ const leadSchema = new Schema<ILead>(
     email: { type: String, lowercase: true, trim: true },
     company: { type: String, trim: true },
     designation: { type: String, trim: true },
+    department: { type: String, trim: true },
     city: { type: String, trim: true },
     state: { type: String, trim: true },
     source: { type: String, enum: Object.values(LeadSource), required: true },

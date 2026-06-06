@@ -128,6 +128,17 @@ export class QuoteController {
     }
   };
 
+  downloadPdf = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { buffer, filename } = await quoteService.streamPdf(req.params.id);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+      res.status(200).send(buffer);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   send = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const data = await quoteService.send(req.params.id, req.body, req.user!.id);

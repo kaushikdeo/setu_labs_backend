@@ -20,6 +20,7 @@ export const createLeadSchema = Joi.object({
   email: Joi.string().email({ tlds: { allow: false } }).optional().allow('', null),
   company: Joi.string().optional().allow('', null),
   designation: Joi.string().optional().allow('', null),
+  department: Joi.string().optional().allow('', null),
   city: Joi.string().optional().allow('', null),
   state: Joi.string().optional().allow('', null),
   source: Joi.string().valid(...Object.values(LeadSource)).required(),
@@ -49,6 +50,7 @@ export const updateLeadSchema = Joi.object({
   email: Joi.string().email({ tlds: { allow: false } }).optional().allow('', null),
   company: Joi.string().optional().allow('', null),
   designation: Joi.string().optional().allow('', null),
+  department: Joi.string().optional().allow('', null),
   city: Joi.string().optional().allow('', null),
   state: Joi.string().optional().allow('', null),
   source: Joi.string().valid(...Object.values(LeadSource)).optional(),
@@ -84,6 +86,9 @@ export const listLeadsQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).optional(),
   sort: Joi.string().valid('created_desc', 'value_desc', 'temperature', 'follow_up_asc', 'assignee').optional(),
   segmentId: Joi.string().pattern(objectIdPattern).optional().allow(''),
+  tags: Joi.alternatives()
+    .try(Joi.string().allow(''), Joi.array().items(Joi.string()))
+    .optional(),
 }).unknown(true);
 
 export const createSegmentSchema = Joi.object({

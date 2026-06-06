@@ -11,7 +11,7 @@ const milestoneSchema = Joi.object({
 });
 
 const lineItemCreateSchema = Joi.object({
-  description: Joi.string().min(1).required(),
+  description: Joi.string().allow('').default(''),
   hsnCode: Joi.string().optional().allow('', null),
   sacCode: Joi.string().optional().allow('', null),
   quantity: Joi.number().min(0).required(),
@@ -27,7 +27,7 @@ const lineItemCreateSchema = Joi.object({
 });
 
 const lineItemUpdateSchema = Joi.object({
-  description: Joi.string().min(1).optional(),
+  description: Joi.string().allow('').optional(),
   hsnCode: Joi.string().optional().allow('', null),
   sacCode: Joi.string().optional().allow('', null),
   quantity: Joi.number().min(0).optional(),

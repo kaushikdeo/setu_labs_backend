@@ -26,6 +26,9 @@ import { ActivityType } from '../activity/activity.model';
 import { srCounterService } from '../sr-counter/sr-counter.service';
 import { UserModel } from '../user/user.model';
 import { AppError } from '../../utils/app-error';
+import { OrganizationModel } from '../organization/organization.model';
+import { generateQuotePdfBuffer } from './quote-pdf.generator';
+import { storageService } from '../storage/storage.service';
 
 const HOME_STATE = 'maharashtra';
 const MANAGER_REVIEW_DISCOUNT_THRESHOLD = 5;
@@ -75,7 +78,7 @@ function buildLineItem(
   return {
     id: input.id ?? randomUUID(),
     sortOrder: input.sortOrder ?? defaults.sortOrder ?? 0,
-    description: input.description ?? '',
+    description: (input.description ?? '').trim(),
     hsnCode: input.hsnCode || undefined,
     sacCode: input.sacCode || undefined,
     quantity,
@@ -463,10 +466,13 @@ export class QuoteService {
     if (idx < 0) throw new AppError(404, 'Line item not found');
     const opp = await loadOpportunityOr404(quote.opportunityId);
     const gstType = detectGstType(opp.state);
-    const existing = quote.lineItems[idx];
+    const existingRaw = quote.lineItems[idx] as IQuoteLineItem & {
+      toObject?: () => IQuoteLineItem;
+    };
+    const existing = existingRaw.toObject?.() ?? { ...existingRaw };
     quote.lineItems[idx] = buildLineItem(
       { ...existing, ...payload, id: existing.id, sortOrder: existing.sortOrder },
-      { gstType }
+      { gstType },
     );
     await recomputeAndSave(quote);
     await syncOpportunityWithPrimaryQuote(quote.opportunityId);
@@ -514,6 +520,12 @@ export class QuoteService {
     }
     if (quote.lineItems.length === 0) {
       throw new AppError(400, 'Add at least one line item before submitting for review');
+    }
+    const missingDescription = quote.lineItems.find(
+      (l) => !l.isOptional && !l.description?.trim(),
+    );
+    if (missingDescription) {
+      throw new AppError(400, 'Every line item must have a description before submitting');
     }
     await recomputeAndSave(quote);
     quote.status = QuoteStatus.UNDER_REVIEW;
@@ -640,25 +652,70 @@ export class QuoteService {
     return quote;
   }
 
+  async buildPdfBuffer(id: string): Promise<Buffer> {
+    const quote = await this.getById(id);
+    const opportunity = await OpportunityModel.findById(quote.opportunityId);
+    if (!opportunity) throw new AppError(404, 'Opportunity not found');
+
+    let tcBody: string | undefined;
+    if (quote.tcTemplateId) {
+      const tpl = await TcTemplateModel.findById(quote.tcTemplateId).lean();
+      tcBody = (tpl as { body?: string } | null)?.body;
+    }
+
+    const organization = await OrganizationModel.findOne().lean();
+    return generateQuotePdfBuffer({
+      quote,
+      opportunity,
+      organization,
+      tcBody,
+    });
+  }
+
   async generatePdf(id: string): Promise<IQuote> {
     const quote = await this.getById(id);
-    if (quote.status === QuoteStatus.DRAFT) {
-      throw new AppError(400, 'Submit the quote for review before generating a PDF');
+    if (quote.lineItems.filter((l) => !l.isOptional).length === 0) {
+      throw new AppError(400, 'Add at least one line item before generating a PDF');
     }
-    quote.pdfUrl = `/quote-pdf/${quote.number}.pdf`;
+
+    const buffer = await this.buildPdfBuffer(id);
+    const filename = `${quote.number.replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
+
+    try {
+      const uploaded = await storageService.uploadImage(
+        buffer,
+        'application/pdf',
+        'quotes',
+        filename,
+      );
+      quote.pdfUrl = uploaded.url;
+    } catch {
+      quote.pdfUrl = `/api/quotes/${id}/pdf`;
+    }
+
     quote.pdfGeneratedAt = new Date();
     await quote.save();
     return quote;
   }
 
-  async send(id: string, dto: SendQuoteDto, userId: string): Promise<IQuote> {
+  async streamPdf(id: string): Promise<{ buffer: Buffer; filename: string }> {
     const quote = await this.getById(id);
+    if (quote.lineItems.filter((l) => !l.isOptional).length === 0) {
+      throw new AppError(400, 'Add at least one line item before downloading the PDF');
+    }
+    const buffer = await this.buildPdfBuffer(id);
+    const filename = `${quote.number.replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
+    return { buffer, filename };
+  }
+
+  async send(id: string, dto: SendQuoteDto, userId: string): Promise<IQuote> {
+    let quote = await this.getById(id);
     if (quote.status !== QuoteStatus.APPROVED) {
       throw new AppError(400, 'Only approved quotes can be sent');
     }
     if (!quote.pdfUrl) {
-      quote.pdfUrl = `/quote-pdf/${quote.number}.pdf`;
-      quote.pdfGeneratedAt = new Date();
+      await this.generatePdf(id);
+      quote = await this.getById(id);
     }
     quote.status = QuoteStatus.SENT;
     quote.sentAt = new Date();

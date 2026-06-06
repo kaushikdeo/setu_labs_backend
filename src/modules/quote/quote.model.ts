@@ -145,7 +145,7 @@ const lineItemSchema = new Schema<IQuoteLineItem>(
   {
     id: { type: String, required: true },
     sortOrder: { type: Number, required: true, default: 0 },
-    description: { type: String, required: true, trim: true },
+    description: { type: String, default: '', trim: true },
     hsnCode: { type: String, trim: true },
     sacCode: { type: String, trim: true },
     quantity: { type: Number, required: true, min: 0 },

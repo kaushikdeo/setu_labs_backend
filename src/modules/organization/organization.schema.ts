@@ -16,6 +16,7 @@ export const createOrganizationSchema = Joi.object({
   pincode: Joi.string().required(),
   timezone: Joi.string().required(),
   website: Joi.string().uri().allow('', null).optional(),
+  gstin: Joi.string().max(15).allow('', null).optional(),
   logoUrl: Joi.string().uri().allow('', null).optional(),
   abbreviation: Joi.string().max(6).allow('', null).optional(),
   srCounterScope: Joi.string().valid(...Object.values(SrCounterScope)).default(SrCounterScope.PER_YEAR),

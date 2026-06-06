@@ -5,6 +5,22 @@ import { srCounterService } from '../sr-counter/sr-counter.service';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
 
+const NULLABLE_ENUM_FIELDS = [
+  'followUpMode',
+  'productInterest',
+  'industry',
+  'decisionTimeline',
+  'budgetStatus',
+] as const;
+
+function normalizePayload(data: Partial<ILead>): Partial<ILead> {
+  const out = { ...data } as Record<string, unknown>;
+  for (const key of NULLABLE_ENUM_FIELDS) {
+    if (out[key] === '' || out[key] === null) delete out[key];
+  }
+  return out as Partial<ILead>;
+}
+
 export interface ListLeadsFilters {
   q?: string;
   temperature?: string;
@@ -19,6 +35,17 @@ export interface ListLeadsFilters {
   limit?: number;
   sort?: string;
   segmentId?: string;
+  tags?: string | string[];
+}
+
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseTagsFilter(tags: string | string[] | undefined): string[] {
+  if (!tags) return [];
+  const list = Array.isArray(tags) ? tags : tags.split(',');
+  return list.map((t) => t.trim()).filter(Boolean);
 }
 
 export interface ListLeadsResult {
@@ -95,13 +122,38 @@ export class LeadService {
 
     if (filters.followUpFrom || filters.followUpTo) {
       const range: Record<string, Date> = {};
-      if (filters.followUpFrom) range.$gte = new Date(filters.followUpFrom);
-      if (filters.followUpTo) range.$lte = new Date(filters.followUpTo);
+      if (filters.followUpFrom) {
+        const d = new Date(filters.followUpFrom);
+        d.setHours(0, 0, 0, 0);
+        range.$gte = d;
+      }
+      if (filters.followUpTo) {
+        const d = new Date(filters.followUpTo);
+        d.setHours(23, 59, 59, 999);
+        range.$lte = d;
+      }
       match.followUpDate = range;
     }
 
     if (filters.q && filters.q.trim()) {
-      match.$text = { $search: filters.q.trim() };
+      const term = escapeRegex(filters.q.trim());
+      const rx = new RegExp(term, 'i');
+      match.$or = [
+        { firstName: rx },
+        { lastName: rx },
+        { company: rx },
+        { mobile: rx },
+        { email: rx },
+        { code: rx },
+        { tags: rx },
+      ];
+    }
+
+    const tagList = parseTagsFilter(filters.tags);
+    if (tagList.length > 0) {
+      match.tags = {
+        $all: tagList.map((t) => new RegExp(`^${escapeRegex(t)}$`, 'i')),
+      };
     }
 
     const page = Math.max(1, filters.page ?? 1);
@@ -163,6 +215,7 @@ export class LeadService {
                 email: 1,
                 company: 1,
                 designation: 1,
+                department: 1,
                 city: 1,
                 state: 1,
                 source: 1,
@@ -242,6 +295,7 @@ export class LeadService {
           email: 1,
           company: 1,
           designation: 1,
+          department: 1,
           city: 1,
           state: 1,
           source: 1,
@@ -282,7 +336,7 @@ export class LeadService {
 
     const now = new Date();
     const lead = await LeadModel.create({
-      ...data,
+      ...normalizePayload(data),
       code,
       createdBy: userId,
       lastActivityAt: now,
@@ -306,7 +360,7 @@ export class LeadService {
 
     const lead = await LeadModel.findByIdAndUpdate(
       id,
-      { ...updateData, lastActivityAt: new Date() },
+      { ...normalizePayload(updateData as Partial<ILead>), lastActivityAt: new Date() },
       { new: true, runValidators: true },
     );
     if (!lead) throw new AppError(404, 'Lead not found');

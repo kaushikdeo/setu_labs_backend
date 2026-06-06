@@ -14,6 +14,8 @@ function parseFilters(query: Request['query']): ListLeadsFilters {
   if (typeof query.scope === 'string') f.scope = query.scope as ListLeadsFilters['scope'];
   if (typeof query.sort === 'string') f.sort = query.sort;
   if (typeof query.segmentId === 'string' && query.segmentId) f.segmentId = query.segmentId;
+  if (typeof query.tags === 'string' && query.tags) f.tags = query.tags;
+  else if (Array.isArray(query.tags)) f.tags = query.tags.filter((t): t is string => typeof t === 'string');
   if (query.page !== undefined) f.page = Number(query.page);
   if (query.limit !== undefined) f.limit = Number(query.limit);
   return f;

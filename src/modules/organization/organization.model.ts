@@ -44,6 +44,7 @@ export interface IOrganization extends Document {
   pincode: string;
   timezone: string;
   website?: string;
+  gstin?: string;
   logoUrl?: string;
   abbreviation?: string;
   srCounterScope: SrCounterScope;
@@ -137,6 +138,7 @@ const organizationSchema = new Schema<IOrganization>(
     pincode: { type: String, required: true, trim: true },
     timezone: { type: String, required: true, trim: true },
     website: { type: String, trim: true },
+    gstin: { type: String, trim: true, uppercase: true },
     logoUrl: { type: String, trim: true },
     abbreviation: { type: String, trim: true, uppercase: true, maxlength: 6 },
     srCounterScope: {

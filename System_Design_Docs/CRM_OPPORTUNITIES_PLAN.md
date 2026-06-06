@@ -1359,4 +1359,23 @@ The `src/features/opportunities/mock/` folder and all three mock stores have bee
 - `opportunity` → `OPP-NNNN`
 - `quote-YYYY` → `QT-YYYY-NNN-Vn` (per calendar year)
 
+### 22.9 Quote PDF generation
+
+Replaces the previous placeholder `pdfUrl` (`/quote-pdf/...`) with real PDF output using **pdfkit**, styled after `Quotation_format.pdf` (SciFi Sebex layout).
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/quotes/:id/generate-pdf` | Builds PDF, uploads to storage when configured, sets `pdfUrl` + `pdfGeneratedAt` |
+| `GET /api/quotes/:id/pdf` | Authenticated inline PDF stream (used for preview + download) |
+
+**Layout sections (matches `Quotation_format.pdf`):** logo + company block, bordered meta row (quotation no/date/reference | place of supply), bill-to & ship-to with grey headers, bordered subject row, full-grid line-item table (Sr No, item & description with `·` bullets, qty, rate, amount), footer grid (total in words + bank details | taxable amount + CGST9/SGST9 + total + signatory), terms & conditions, page frame + page numbers.
+
+**Company profile:** defaults to SciFi Sebex constants in `quote-pdf.config.ts`; overridden by internal `Organization` record when present (name, address, contacts, **GSTIN**, **logo**).
+
+**Organization logo:** uploaded on Organization → Basic Info (`/onboarding`); stored as `logoUrl`. PDF header embeds the image (PNG/JPG/WebP) when fetchable. SVG is skipped (pdfkit limitation).
+
+**Frontend:** `fetchQuotePdfBlob` downloads via authenticated `GET /api/quotes/:id/pdf` (fixes `window.open` on a fake relative URL). Toolbar **Generate & download PDF** and PDF tab preview use this path.
+
+**Pagination:** page breaks use a single tracked `y` cursor (`ensureSpaceAt`). Mixing `doc.y` with manual `y` in `drawLineItem` previously triggered double `addPage()` and a blank middle page when content neared the page bottom.
+
 ---
