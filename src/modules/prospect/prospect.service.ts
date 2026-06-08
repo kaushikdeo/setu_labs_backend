@@ -17,14 +17,17 @@ import {
   LeadStatus,
 } from '../lead/lead.model';
 import { activityService } from '../activity/activity.service';
-import { ActivityModel, ActivityType } from '../activity/activity.model';
+import { ActivityType } from '../activity/activity.model';
+import { followUpService } from '../follow-up/follow-up.service';
 import { srCounterService } from '../sr-counter/sr-counter.service';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
+import { computeHealth, staleCutoffFor } from '../crm-health/compute-health';
+import { enrichWithHealth } from '../crm-health/enrich-health';
+import { PutOnHoldDto, ResumeDto, SnoozeDto } from '../crm-health/hold.types';
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
-const STALE_THRESHOLD_DAYS = 14;
 const NEGOTIATION_LARGE_DEAL_THRESHOLD = 2_500_000;
 
 const STAGE_DEFAULT_PROBABILITY: Record<PipelineStage, number> = {
@@ -60,9 +63,7 @@ function pad(n: number, width = 4): string {
 }
 
 function staleCutoff(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - STALE_THRESHOLD_DAYS);
-  return d;
+  return staleCutoffFor('prospect');
 }
 
 function weightedValue(deal: number, probability: number): number {
@@ -153,6 +154,14 @@ const PROJECT_PROSPECT = {
   convertedAt: 1,
   convertedBy: 1,
   createdBy: 1,
+  stageChangedAt: 1,
+  holdReason: 1,
+  holdUntil: 1,
+  holdNotes: 1,
+  heldAt: 1,
+  previousStatus: 1,
+  previousStage: 1,
+  alertSnoozedUntil: 1,
   createdAt: 1,
   updatedAt: 1,
 };
@@ -201,7 +210,7 @@ export interface ListProspectsFilters {
   assignedUserId?: string;
   closeFrom?: string | Date;
   closeTo?: string | Date;
-  scope?: 'all' | 'hot' | 'qualified' | 'mine' | 'stale';
+  scope?: 'all' | 'hot' | 'qualified' | 'mine' | 'stale' | 'on_hold' | 'at_risk' | 'needs_attention';
   page?: number;
   limit?: number;
   sort?: string;
@@ -259,9 +268,13 @@ export class ProspectService {
     if (filters.scope === 'qualified') {
       match.status = ProspectStatus.OPEN;
       match.stage = { $in: QUALIFIED_STAGES };
+    } else if (filters.scope === 'on_hold') {
+      match.status = ProspectStatus.ON_HOLD;
     } else if (filters.scope === 'stale') {
       match.status = ProspectStatus.OPEN;
       match.lastActivityAt = { $lt: staleCutoff() };
+    } else if (filters.scope === 'at_risk' || filters.scope === 'needs_attention') {
+      match.status = ProspectStatus.OPEN;
     }
 
     if (filters.stage) match.stage = filters.stage;
@@ -301,8 +314,22 @@ export class ProspectService {
     ];
 
     const [agg] = await ProspectModel.aggregate(pipeline);
-    const data = (agg?.data ?? []) as unknown[];
-    const total = (agg?.total?.[0]?.count ?? 0) as number;
+    let data = ((agg?.data ?? []) as Record<string, unknown>[]).map((row) =>
+      enrichWithHealth(row, 'prospect'),
+    );
+
+    if (filters.scope === 'at_risk') {
+      data = data.filter((r) => r.healthStatus === 'at_risk' || r.healthStatus === 'critical');
+    } else if (filters.scope === 'needs_attention') {
+      data = data.filter((r) =>
+        ['attention', 'stale', 'at_risk', 'critical'].includes(String(r.healthStatus)),
+      );
+    }
+
+    const total =
+      filters.scope === 'at_risk' || filters.scope === 'needs_attention'
+        ? data.length
+        : ((agg?.total?.[0]?.count ?? 0) as number);
     return { data, page, limit, total };
   }
 
@@ -314,7 +341,7 @@ export class ProspectService {
       { $project: PROJECT_PROSPECT },
     ]);
     if (!doc) throw new AppError(404, 'Prospect not found');
-    return doc;
+    return enrichWithHealth(doc as Record<string, unknown>, 'prospect');
   }
 
   async findByLeadId(leadId: string): Promise<unknown | null> {
@@ -397,11 +424,46 @@ export class ProspectService {
             { $match: { status: ProspectStatus.LOST, lostAt: { $gte: monthStart } } },
             { $count: 'count' },
           ],
+          onHold: [{ $match: { status: ProspectStatus.ON_HOLD } }, { $count: 'count' }],
+          onHoldValue: [
+            { $match: { status: ProspectStatus.ON_HOLD } },
+            { $group: { _id: null, total: { $sum: '$dealValue' } } },
+          ],
+          onHoldExpiring: [
+            {
+              $match: {
+                status: ProspectStatus.ON_HOLD,
+                holdUntil: { $lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), $ne: null },
+              },
+            },
+            { $count: 'count' },
+          ],
         },
       },
     ]);
 
     const o = agg?.open?.[0] ?? {};
+    const onHoldCount = agg?.onHold?.[0]?.count ?? 0;
+    const onHoldValue = agg?.onHoldValue?.[0]?.total ?? 0;
+    const onHoldExpiringSoon = agg?.onHoldExpiring?.[0]?.count ?? 0;
+
+    const openProspects = await ProspectModel.find({ status: ProspectStatus.OPEN }).lean();
+    let atRiskCount = 0;
+    let criticalCount = 0;
+    for (const p of openProspects) {
+      const { healthStatus } = computeHealth({
+        entityType: 'prospect',
+        status: p.status,
+        lastActivityAt: p.lastActivityAt,
+        followUpDate: p.nextFollowUpDate,
+        expectedCloseDate: p.expectedCloseDate,
+        stage: p.stage,
+        stageChangedAt: p.stageChangedAt,
+      });
+      if (healthStatus === 'at_risk') atRiskCount += 1;
+      if (healthStatus === 'critical') criticalCount += 1;
+    }
+
     return {
       totalActive: o.total ?? 0,
       pipelineValue: o.pipelineValue ?? 0,
@@ -409,6 +471,11 @@ export class ProspectService {
       hotCount: o.hotCount ?? 0,
       qualifiedCount: o.qualifiedCount ?? 0,
       staleCount: o.staleCount ?? 0,
+      onHoldCount,
+      onHoldValue,
+      atRiskCount,
+      criticalCount,
+      onHoldExpiringSoon,
       followUpsDueToday: o.followUpsDueToday ?? 0,
       overdueFollowUps: o.overdueFollowUps ?? 0,
       wonThisMonth: agg?.won?.[0]?.count ?? 0,
@@ -437,6 +504,23 @@ export class ProspectService {
         totalValue: stageDocs.reduce((acc, p) => acc + (p.dealValue || 0), 0),
         prospects: stageDocs,
       };
+    });
+
+    const onHoldDocs = await ProspectModel.aggregate([
+      { $match: { status: ProspectStatus.ON_HOLD } },
+      ...ENRICH_STAGES,
+      { $sort: { dealValue: -1 } },
+      { $project: PROJECT_PROSPECT },
+    ]);
+
+    columns.push({
+      stage: 'on_hold' as PipelineStage,
+      count: onHoldDocs.length,
+      totalValue: (onHoldDocs as Array<{ dealValue: number }>).reduce(
+        (acc, p) => acc + (p.dealValue || 0),
+        0,
+      ),
+      prospects: onHoldDocs,
     });
 
     return { columns };
@@ -504,31 +588,7 @@ export class ProspectService {
   }
 
   async followUps(callerUserId: string) {
-    void callerUserId;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const weekAhead = new Date(today);
-    weekAhead.setDate(weekAhead.getDate() + 7);
-
-    const docs = (await ProspectModel.aggregate([
-      { $match: { status: ProspectStatus.OPEN, nextFollowUpDate: { $ne: null } } },
-      ...ENRICH_STAGES,
-      { $project: PROJECT_PROSPECT },
-    ])) as Array<{ nextFollowUpDate: Date; lastActivityAt: Date; dealValue: number; expectedCloseDate: Date }>;
-
-    const overdue = docs
-      .filter((p) => new Date(p.nextFollowUpDate) < today)
-      .sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
-    const dueToday = docs
-      .filter((p) => new Date(p.nextFollowUpDate) >= today && new Date(p.nextFollowUpDate) < tomorrow)
-      .sort((a, b) => b.dealValue - a.dealValue);
-    const upcoming = docs
-      .filter((p) => new Date(p.nextFollowUpDate) >= tomorrow && new Date(p.nextFollowUpDate) <= weekAhead)
-      .sort((a, b) => new Date(a.expectedCloseDate).getTime() - new Date(b.expectedCloseDate).getTime());
-
-    return { overdue, dueToday, upcoming };
+    return followUpService.listOpen('prospect', callerUserId);
   }
 
   private async autoTasksForStage(prospect: IProspect, stage: PipelineStage, userId: string): Promise<void> {
@@ -630,6 +690,12 @@ export class ProspectService {
       convertedAt: now,
       convertedBy: userId,
       createdBy: userId,
+      ...(lead.followUpDate
+        ? {
+            nextFollowUpDate: lead.followUpDate,
+            nextFollowUpMode: lead.followUpMode ?? undefined,
+          }
+        : {}),
     });
 
     await LeadModel.findByIdAndUpdate(lead._id, {
@@ -813,32 +879,15 @@ export class ProspectService {
   }
 
   async clearFollowUp(id: string): Promise<IProspect> {
-    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const updated = await ProspectModel.findByIdAndUpdate(
-      id,
-      { nextFollowUpDate: null, nextFollowUpMode: null },
-      { new: true },
-    );
-    if (!updated) throw new AppError(404, 'Prospect not found');
-    return updated;
+    return followUpService.clearFollowUp('prospect', id) as Promise<IProspect>;
   }
 
   async syncFollowUpFromActivity(prospectId: string, occurredAt: Date, mode?: string): Promise<void> {
-    if (!Types.ObjectId.isValid(prospectId)) return;
-    const isFuture = occurredAt.getTime() > Date.now();
-    const update: Record<string, unknown> = { nextFollowUpDate: occurredAt };
-    if (mode && Object.values(FollowUpMode).includes(mode as FollowUpMode)) {
-      update.nextFollowUpMode = mode;
-    }
-    if (!isFuture) {
-      update.lastActivityAt = new Date();
-    }
-    await ProspectModel.findByIdAndUpdate(prospectId, update);
+    return followUpService.syncFromActivity('prospect', prospectId, occurredAt, mode);
   }
 
   async touchLastActivity(prospectId: string): Promise<void> {
-    if (!Types.ObjectId.isValid(prospectId)) return;
-    await ProspectModel.findByIdAndUpdate(prospectId, { lastActivityAt: new Date() });
+    return followUpService.touchLastActivity('prospect', prospectId);
   }
 
   async completeFollowUp(
@@ -851,92 +900,12 @@ export class ProspectService {
     },
     userId: string,
   ): Promise<{ prospect: IProspect; completedFollowUpId: string | null; touchpointId: string; scheduledId: string | null }> {
-    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const prospect = await ProspectModel.findById(id);
-    if (!prospect) throw new AppError(404, 'Prospect not found');
-
-    const now = new Date();
-    const eid = prospect._id as Types.ObjectId;
-
-    const openFilter: Record<string, unknown> = {
-      entityType: 'prospect',
-      entityId: eid,
-      type: ActivityType.FOLLOW_UP,
-      $or: [{ 'metadata.completedAt': { $exists: false } }, { 'metadata.completedAt': null }],
-    };
-
-    let openFollowUp = prospect.nextFollowUpDate
-      ? await ActivityModel.findOne({ ...openFilter, occurredAt: prospect.nextFollowUpDate })
-          .sort({ createdAt: -1 })
-          .exec()
-      : null;
-    if (!openFollowUp) {
-      openFollowUp = await ActivityModel.findOne(openFilter).sort({ occurredAt: -1 }).exec();
-    }
-
-    let completedFollowUpId: string | null = null;
-    if (openFollowUp) {
-      const meta = (openFollowUp.metadata as Record<string, unknown> | undefined) ?? {};
-      openFollowUp.set('metadata', {
-        ...meta,
-        completedAt: now,
-        completedAs: dto.doneAs,
-        completedBy: userId,
-      });
-      openFollowUp.markModified('metadata');
-      await openFollowUp.save();
-      completedFollowUpId = String(openFollowUp._id);
-    }
-
-    const touchpoint = await activityService.add(
-      {
-        entityType: 'prospect',
-        entityId: String(eid),
-        type: dto.doneAs,
-        title: dto.title,
-        description: dto.note,
-        occurredAt: now,
-        metadata: completedFollowUpId
-          ? { completesFollowUpId: completedFollowUpId }
-          : undefined,
-      },
-      userId,
-    );
-
-    let scheduledId: string | null = null;
-    if (dto.reschedule) {
-      const scheduled = await activityService.add(
-        {
-          entityType: 'prospect',
-          entityId: String(eid),
-          type: ActivityType.FOLLOW_UP,
-          title: `Follow up via ${dto.reschedule.mode}`,
-          description: dto.reschedule.note,
-          occurredAt: new Date(dto.reschedule.occurredAt),
-          metadata: { mode: dto.reschedule.mode },
-        },
-        userId,
-      );
-      scheduledId = String(scheduled._id);
-      await ProspectModel.findByIdAndUpdate(eid, {
-        nextFollowUpDate: scheduled.occurredAt,
-        nextFollowUpMode: dto.reschedule.mode,
-        lastActivityAt: now,
-      });
-    } else {
-      await ProspectModel.findByIdAndUpdate(eid, {
-        nextFollowUpDate: null,
-        nextFollowUpMode: null,
-        lastActivityAt: now,
-      });
-    }
-
-    const fresh = await ProspectModel.findById(id);
+    const result = await followUpService.completeFollowUp('prospect', id, dto, userId);
     return {
-      prospect: fresh as IProspect,
-      completedFollowUpId,
-      touchpointId: String(touchpoint._id),
-      scheduledId,
+      prospect: result.entity as IProspect,
+      completedFollowUpId: result.completedFollowUpId,
+      touchpointId: result.touchpointId,
+      scheduledId: result.scheduledId,
     };
   }
 
@@ -945,88 +914,83 @@ export class ProspectService {
     callerUserId: string,
     scope?: 'mine' | 'all',
   ): Promise<unknown[]> {
-    const since = new Date(Date.now() - Math.max(1, days) * 86400000);
+    return followUpService.listCompleted('prospect', days, callerUserId, scope);
+  }
 
-    const prospectMatch: Record<string, unknown> = {};
-    if (scope === 'mine') prospectMatch.assignedUserId = new Types.ObjectId(callerUserId);
+  async putOnHold(id: string, dto: PutOnHoldDto, userId: string): Promise<IProspect> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
+    const prev = await ProspectModel.findById(id);
+    if (!prev) throw new AppError(404, 'Prospect not found');
+    if ([ProspectStatus.WON, ProspectStatus.LOST, ProspectStatus.ON_HOLD].includes(prev.status)) {
+      throw new AppError(400, 'Prospect cannot be put on hold in its current status');
+    }
 
-    const pipeline: MongoPipelineStage[] = [
-      {
-        $match: {
-          entityType: 'prospect',
-          type: ActivityType.FOLLOW_UP,
-          'metadata.completedAt': { $ne: null, $exists: true, $gte: since },
-        },
-      },
-      {
-        $lookup: {
-          from: 'prospects',
-          localField: 'entityId',
-          foreignField: '_id',
-          as: 'prospect',
-        },
-      },
-      { $unwind: '$prospect' },
-      { $match: Object.keys(prospectMatch).length ? { 'prospect.assignedUserId': prospectMatch.assignedUserId } : {} },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'prospect.assignedUserId',
-          foreignField: '_id',
-          as: 'assignee',
-        },
-      },
-      {
-        $addFields: {
-          assignee: {
-            $arrayElemAt: [
-              {
-                $map: {
-                  input: '$assignee',
-                  as: 'a',
-                  in: { id: '$$a._id', name: '$$a.name', email: '$$a.email' },
-                },
-              },
-              0,
-            ],
-          },
-        },
-      },
-      { $sort: { 'metadata.completedAt': -1 } },
-      {
-        $addFields: {
-          activityIdStr: { $toString: '$_id' },
-          prospectFlat: {
-            id: { $toString: '$prospect._id' },
-            code: '$prospect.code',
-            firstName: '$prospect.firstName',
-            lastName: '$prospect.lastName',
-            company: '$prospect.company',
-            stage: '$prospect.stage',
-            status: '$prospect.status',
-            dealValue: '$prospect.dealValue',
-            assignedUserId: { $toString: '$prospect.assignedUserId' },
-          },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          id: '$activityIdStr',
-          activityId: '$activityIdStr',
-          occurredAt: 1,
-          completedAt: '$metadata.completedAt',
-          completedAs: '$metadata.completedAs',
-          mode: '$metadata.mode',
-          title: 1,
-          description: 1,
-          prospect: '$prospectFlat',
-          assignee: 1,
-        },
-      },
-    ];
+    prev.previousStatus = prev.status;
+    prev.previousStage = prev.stage;
+    prev.status = ProspectStatus.ON_HOLD;
+    prev.holdReason = dto.holdReason;
+    prev.holdUntil = dto.holdUntil ? new Date(dto.holdUntil) : null;
+    prev.holdNotes = dto.holdNotes ?? null;
+    prev.heldAt = new Date();
+    prev.heldBy = new Types.ObjectId(userId);
+    await prev.save();
+    await followUpService.clearFollowUp('prospect', id);
 
-    return ActivityModel.aggregate(pipeline);
+    await activityService.logSystem(
+      'prospect',
+      prev._id as Types.ObjectId,
+      ActivityType.ON_HOLD,
+      'Prospect put on hold',
+      {
+        description: dto.holdNotes ?? undefined,
+        metadata: { holdReason: dto.holdReason, holdUntil: prev.holdUntil },
+      },
+      userId,
+    );
+    return prev;
+  }
+
+  async resume(id: string, dto: ResumeDto, userId: string): Promise<IProspect> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
+    const prev = await ProspectModel.findById(id);
+    if (!prev) throw new AppError(404, 'Prospect not found');
+    if (prev.status !== ProspectStatus.ON_HOLD) throw new AppError(400, 'Prospect is not on hold');
+
+    prev.status = (prev.previousStatus as ProspectStatus) ?? ProspectStatus.OPEN;
+    if (prev.previousStage) prev.stage = prev.previousStage as PipelineStage;
+    prev.previousStatus = null;
+    prev.previousStage = null;
+    prev.holdReason = null;
+    prev.holdUntil = null;
+    prev.holdNotes = null;
+    prev.heldAt = null;
+    prev.heldBy = null;
+    prev.lastActivityAt = new Date();
+    await prev.save();
+
+    if (dto.followUpDate) {
+      const mode = (dto.followUpMode ?? FollowUpMode.PHONE) as FollowUpMode;
+      await followUpService.syncFromActivity('prospect', id, new Date(dto.followUpDate), mode);
+    }
+
+    await activityService.logSystem(
+      'prospect',
+      prev._id as Types.ObjectId,
+      ActivityType.RESUMED,
+      'Prospect resumed from hold',
+      { description: dto.note ?? undefined },
+      userId,
+    );
+    return prev;
+  }
+
+  async snooze(id: string, dto: SnoozeDto, _userId: string): Promise<IProspect> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
+    const until = new Date();
+    until.setDate(until.getDate() + dto.days);
+    const prev = await ProspectModel.findByIdAndUpdate(id, { alertSnoozedUntil: until }, { new: true });
+    if (!prev) throw new AppError(404, 'Prospect not found');
+    return prev;
   }
 }
 

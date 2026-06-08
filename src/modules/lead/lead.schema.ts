@@ -81,7 +81,7 @@ export const listLeadsQuerySchema = Joi.object({
   assignedUserId: Joi.string().pattern(objectIdPattern).optional().allow(''),
   followUpFrom: Joi.date().optional().allow(''),
   followUpTo: Joi.date().optional().allow(''),
-  scope: Joi.string().valid('all', 'hot', 'stale', 'mine').optional(),
+  scope: Joi.string().valid('all', 'hot', 'stale', 'mine', 'on_hold', 'at_risk', 'needs_attention').optional(),
   page: Joi.number().integer().min(1).optional(),
   limit: Joi.number().integer().min(1).max(100).optional(),
   sort: Joi.string().valid('created_desc', 'value_desc', 'temperature', 'follow_up_asc', 'assignee').optional(),
@@ -101,4 +101,16 @@ export const updateSegmentSchema = Joi.object({
   name: Joi.string().min(1).optional(),
   filters: Joi.object().optional(),
   isShared: Joi.boolean().optional(),
+});
+
+export const importCommitSchema = Joi.object({
+  importId: Joi.string().uuid().required(),
+});
+
+export { putOnHoldSchema, resumeSchema, snoozeSchema } from '../crm-health/hold.schema';
+
+export const importDefaultsSchema = Joi.object({
+  assignedUserId: Joi.string().pattern(objectIdPattern).required(),
+  source: Joi.string().valid(...Object.values(LeadSource)).required(),
+  temperature: Joi.string().valid(...Object.values(LeadTemperature)).optional(),
 });

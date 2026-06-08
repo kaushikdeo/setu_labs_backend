@@ -13,6 +13,8 @@ import {
   markWonSchema,
   updateOpportunitySchema,
 } from './opportunity.schema';
+import { completeFollowUpSchema } from '../follow-up/follow-up.schema';
+import { putOnHoldSchema, resumeSchema, snoozeSchema } from '../crm-health/hold.schema';
 
 const router = Router();
 const controller = new OpportunityController();
@@ -58,6 +60,16 @@ router.post(
 );
 router.post('/:id/won', requireRole(...writeRoles), validate(markWonSchema), controller.markWon);
 router.post('/:id/lost', requireRole(...writeRoles), validate(markLostSchema), controller.markLost);
+router.post('/:id/on-hold', requireRole(...writeRoles), validate(putOnHoldSchema), controller.putOnHold);
+router.post('/:id/resume', requireRole(...writeRoles), validate(resumeSchema), controller.resume);
+router.post('/:id/snooze', requireRole(...writeRoles), validate(snoozeSchema), controller.snooze);
+router.post(
+  '/:id/follow-up/complete',
+  requireRole(...writeRoles),
+  validate(completeFollowUpSchema),
+  controller.completeFollowUp,
+);
+router.delete('/:id/follow-up', requireRole(...writeRoles), controller.clearFollowUp);
 router.delete('/:id', requireRole(...deleteRoles), controller.remove);
 
 export default router;

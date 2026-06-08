@@ -14,6 +14,7 @@ import {
   markWonSchema,
   updateProspectSchema,
 } from './prospect.schema';
+import { putOnHoldSchema, resumeSchema, snoozeSchema } from '../crm-health/hold.schema';
 
 const router = Router();
 const controller = new ProspectController();
@@ -42,6 +43,9 @@ router.patch('/:id', requireRole(...writeRoles), validate(updateProspectSchema),
 router.post('/:id/stage', requireRole(...writeRoles), validate(changeStageSchema), controller.changeStage);
 router.post('/:id/won', requireRole(...writeRoles), validate(markWonSchema), controller.markWon);
 router.post('/:id/lost', requireRole(...writeRoles), validate(markLostSchema), controller.markLost);
+router.post('/:id/on-hold', requireRole(...writeRoles), validate(putOnHoldSchema), controller.putOnHold);
+router.post('/:id/resume', requireRole(...writeRoles), validate(resumeSchema), controller.resume);
+router.post('/:id/snooze', requireRole(...writeRoles), validate(snoozeSchema), controller.snooze);
 router.post(
   '/:id/follow-up/complete',
   requireRole(...writeRoles),

@@ -161,7 +161,7 @@ export const listOpportunitiesQuerySchema = Joi.object({
   deadlineFrom: Joi.date().optional().allow(''),
   deadlineTo: Joi.date().optional().allow(''),
   scope: Joi.string()
-    .valid('all', 'mine', 'stale', 'due-this-week', 'pending-approvals')
+    .valid('all', 'mine', 'stale', 'on_hold', 'at_risk', 'needs_attention', 'due-this-week', 'pending-approvals')
     .optional(),
   page: Joi.number().integer().min(1).optional(),
   limit: Joi.number().integer().min(1).max(100).optional(),

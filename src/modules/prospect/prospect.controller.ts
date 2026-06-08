@@ -127,6 +127,33 @@ export class ProspectController {
     }
   };
 
+  putOnHold = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await prospectService.putOnHold(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  resume = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await prospectService.resume(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  snooze = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await prospectService.snooze(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   remove = async (req: Request, res: Response, next: NextFunction) => {
     try {
       await prospectService.remove(req.params.id, req.user!.id);

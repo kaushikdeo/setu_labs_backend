@@ -15,7 +15,6 @@ import {
 import {
   BudgetStatus,
   DecisionTimeline,
-  FollowUpMode,
   LeadIndustry,
   LeadProductInterest,
   LeadSource,
@@ -24,14 +23,20 @@ import {
 import { AuthorityType, IProspect, ProspectModel } from '../prospect/prospect.model';
 import { activityService } from '../activity/activity.service';
 import { ActivityModel, ActivityType } from '../activity/activity.model';
+import { followUpService } from '../follow-up/follow-up.service';
 import { srCounterService } from '../sr-counter/sr-counter.service';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
+import { computeHealth, staleCutoffFor } from '../crm-health/compute-health';
+import { enrichWithHealth } from '../crm-health/enrich-health';
+import { PutOnHoldDto, ResumeDto, SnoozeDto } from '../crm-health/hold.types';
+import { AT_RISK_QUOTE_SENT_DAYS } from '../crm-health/health.constants';
+import { FollowUpMode } from '../lead/lead.model';
+
+const ATRISK_THRESHOLD_DAYS = AT_RISK_QUOTE_SENT_DAYS;
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
-const STALE_THRESHOLD_DAYS = 7;
-const ATRISK_THRESHOLD_DAYS = 14;
 
 const STAGE_DEFAULT_PROBABILITY: Record<OpportunityStage, number> = {
   [OpportunityStage.SCOPE_DEFINED]: 40,
@@ -75,9 +80,7 @@ function pad(n: number, width = 4): string {
 }
 
 function staleCutoff(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - STALE_THRESHOLD_DAYS);
-  return d;
+  return staleCutoffFor('opportunity');
 }
 
 function weightedValue(deal: number, probability: number): number {
@@ -181,6 +184,13 @@ const PROJECT_OPPORTUNITY = {
   convertedAt: 1,
   convertedBy: 1,
   createdBy: 1,
+  holdReason: 1,
+  holdUntil: 1,
+  holdNotes: 1,
+  heldAt: 1,
+  previousStatus: 1,
+  previousStage: 1,
+  alertSnoozedUntil: 1,
   createdAt: 1,
   updatedAt: 1,
 };
@@ -269,7 +279,7 @@ export interface ListOpportunitiesFilters {
   assignedUserId?: string;
   deadlineFrom?: string | Date;
   deadlineTo?: string | Date;
-  scope?: 'all' | 'mine' | 'stale' | 'due-this-week' | 'pending-approvals';
+  scope?: 'all' | 'mine' | 'stale' | 'on_hold' | 'at_risk' | 'needs_attention' | 'due-this-week' | 'pending-approvals';
   page?: number;
   limit?: number;
   sort?: string;
@@ -351,9 +361,13 @@ export class OpportunityService {
       match.assignedUserId = new Types.ObjectId(filters.assignedUserId);
     }
 
-    if (filters.scope === 'stale') {
+    if (filters.scope === 'on_hold') {
+      match.status = OpportunityStatus.ON_HOLD;
+    } else if (filters.scope === 'stale') {
       match.status = OpportunityStatus.OPEN;
       match.lastActivityAt = { $lt: staleCutoff() };
+    } else if (filters.scope === 'at_risk' || filters.scope === 'needs_attention') {
+      match.status = OpportunityStatus.OPEN;
     }
 
     if (filters.scope === 'due-this-week') {
@@ -408,8 +422,22 @@ export class OpportunityService {
     ];
 
     const [agg] = await OpportunityModel.aggregate(pipeline);
-    const data = (agg?.data ?? []) as unknown[];
-    const total = (agg?.total?.[0]?.count ?? 0) as number;
+    let data = ((agg?.data ?? []) as Record<string, unknown>[]).map((row) =>
+      enrichWithHealth(row, 'opportunity'),
+    );
+
+    if (filters.scope === 'at_risk') {
+      data = data.filter((r) => r.healthStatus === 'at_risk' || r.healthStatus === 'critical');
+    } else if (filters.scope === 'needs_attention') {
+      data = data.filter((r) =>
+        ['attention', 'stale', 'at_risk', 'critical'].includes(String(r.healthStatus)),
+      );
+    }
+
+    const total =
+      filters.scope === 'at_risk' || filters.scope === 'needs_attention'
+        ? data.length
+        : ((agg?.total?.[0]?.count ?? 0) as number);
     return { data, page, limit, total };
   }
 
@@ -421,7 +449,7 @@ export class OpportunityService {
       { $project: PROJECT_OPPORTUNITY },
     ]);
     if (!doc) throw new AppError(404, 'Opportunity not found');
-    return doc;
+    return enrichWithHealth(doc as Record<string, unknown>, 'opportunity');
   }
 
   async findByProspectId(prospectId: string): Promise<unknown | null> {
@@ -493,11 +521,47 @@ export class OpportunityService {
             { $match: { status: OpportunityStatus.LOST, lostAt: { $gte: monthStart } } },
             { $count: 'count' },
           ],
+          onHold: [{ $match: { status: OpportunityStatus.ON_HOLD } }, { $count: 'count' }],
+          onHoldValue: [
+            { $match: { status: OpportunityStatus.ON_HOLD } },
+            { $group: { _id: null, total: { $sum: '$dealValue' } } },
+          ],
+          onHoldExpiring: [
+            {
+              $match: {
+                status: OpportunityStatus.ON_HOLD,
+                holdUntil: { $lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), $ne: null },
+              },
+            },
+            { $count: 'count' },
+          ],
         },
       },
     ]);
 
     const o = agg?.open?.[0] ?? {};
+    const onHoldCount = agg?.onHold?.[0]?.count ?? 0;
+    const onHoldValue = agg?.onHoldValue?.[0]?.total ?? 0;
+    const onHoldExpiringSoon = agg?.onHoldExpiring?.[0]?.count ?? 0;
+
+    const openOpps = await OpportunityModel.find({ status: OpportunityStatus.OPEN }).lean();
+    let atRiskCount = 0;
+    let criticalCount = 0;
+    for (const opp of openOpps) {
+      const { healthStatus } = computeHealth({
+        entityType: 'opportunity',
+        status: opp.status,
+        lastActivityAt: opp.lastActivityAt,
+        followUpDate: opp.nextFollowUpDate,
+        expectedCloseDate: opp.expectedCloseDate,
+        submissionDeadline: opp.submissionDeadline,
+        stage: opp.stage,
+        stageChangedAt: opp.stageChangedAt,
+      });
+      if (healthStatus === 'at_risk') atRiskCount += 1;
+      if (healthStatus === 'critical') criticalCount += 1;
+    }
+
     return {
       totalActive: o.total ?? 0,
       pipelineValue: o.pipelineValue ?? 0,
@@ -505,6 +569,11 @@ export class OpportunityService {
       quotesPendingSend: o.quotesPendingSend ?? 0,
       pendingApprovals: o.pendingApprovals ?? 0,
       staleCount: o.staleCount ?? 0,
+      onHoldCount,
+      onHoldValue,
+      atRiskCount,
+      criticalCount,
+      onHoldExpiringSoon,
       submissionsDueThisWeek: o.submissionsDueThisWeek ?? 0,
       wonThisMonth: agg?.won?.[0]?.count ?? 0,
       lostThisMonth: agg?.lost?.[0]?.count ?? 0,
@@ -531,6 +600,24 @@ export class OpportunityService {
         opportunities: stageDocs,
       };
     });
+
+    const onHoldDocs = await OpportunityModel.aggregate([
+      { $match: { status: OpportunityStatus.ON_HOLD } },
+      ...ENRICH_STAGES,
+      { $sort: { dealValue: -1 } },
+      { $project: PROJECT_OPPORTUNITY },
+    ]);
+
+    columns.push({
+      stage: 'on_hold' as OpportunityStage,
+      count: onHoldDocs.length,
+      totalValue: (onHoldDocs as Array<{ dealValue: number }>).reduce(
+        (acc, d) => acc + (d.dealValue || 0),
+        0,
+      ),
+      opportunities: onHoldDocs,
+    });
+
     return { columns };
   }
 
@@ -1198,16 +1285,7 @@ export class OpportunityService {
     occurredAt: Date,
     mode?: string
   ): Promise<void> {
-    if (!Types.ObjectId.isValid(opportunityId)) return;
-    const isFuture = occurredAt.getTime() > Date.now();
-    const update: Record<string, unknown> = { nextFollowUpDate: occurredAt };
-    if (mode && Object.values(FollowUpMode).includes(mode as FollowUpMode)) {
-      update.nextFollowUpMode = mode;
-    }
-    if (!isFuture) {
-      update.lastActivityAt = new Date();
-    }
-    await OpportunityModel.findByIdAndUpdate(opportunityId, update);
+    return followUpService.syncFromActivity('opportunity', opportunityId, occurredAt, mode);
   }
 
   async updateActiveQuoteDenorm(
@@ -1229,6 +1307,82 @@ export class OpportunityService {
     if (Object.keys(update).length) {
       await OpportunityModel.findByIdAndUpdate(opportunityId, update);
     }
+  }
+
+  async putOnHold(id: string, dto: PutOnHoldDto, userId: string): Promise<IOpportunity> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
+    const prev = await OpportunityModel.findById(id);
+    if (!prev) throw new AppError(404, 'Opportunity not found');
+    if ([OpportunityStatus.WON, OpportunityStatus.LOST, OpportunityStatus.ON_HOLD].includes(prev.status)) {
+      throw new AppError(400, 'Opportunity cannot be put on hold in its current status');
+    }
+
+    prev.previousStatus = prev.status;
+    prev.previousStage = prev.stage;
+    prev.status = OpportunityStatus.ON_HOLD;
+    prev.holdReason = dto.holdReason;
+    prev.holdUntil = dto.holdUntil ? new Date(dto.holdUntil) : null;
+    prev.holdNotes = dto.holdNotes ?? null;
+    prev.heldAt = new Date();
+    prev.heldBy = new Types.ObjectId(userId);
+    await prev.save();
+    await followUpService.clearFollowUp('opportunity', id);
+
+    await activityService.logSystem(
+      'opportunity',
+      prev._id as Types.ObjectId,
+      ActivityType.ON_HOLD,
+      'Opportunity put on hold',
+      {
+        description: dto.holdNotes ?? undefined,
+        metadata: { holdReason: dto.holdReason, holdUntil: prev.holdUntil },
+      },
+      userId,
+    );
+    return prev;
+  }
+
+  async resume(id: string, dto: ResumeDto, userId: string): Promise<IOpportunity> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
+    const prev = await OpportunityModel.findById(id);
+    if (!prev) throw new AppError(404, 'Opportunity not found');
+    if (prev.status !== OpportunityStatus.ON_HOLD) throw new AppError(400, 'Opportunity is not on hold');
+
+    prev.status = (prev.previousStatus as OpportunityStatus) ?? OpportunityStatus.OPEN;
+    if (prev.previousStage) prev.stage = prev.previousStage as OpportunityStage;
+    prev.previousStatus = null;
+    prev.previousStage = null;
+    prev.holdReason = null;
+    prev.holdUntil = null;
+    prev.holdNotes = null;
+    prev.heldAt = null;
+    prev.heldBy = null;
+    prev.lastActivityAt = new Date();
+    await prev.save();
+
+    if (dto.followUpDate) {
+      const mode = (dto.followUpMode ?? FollowUpMode.PHONE) as FollowUpMode;
+      await followUpService.syncFromActivity('opportunity', id, new Date(dto.followUpDate), mode);
+    }
+
+    await activityService.logSystem(
+      'opportunity',
+      prev._id as Types.ObjectId,
+      ActivityType.RESUMED,
+      'Opportunity resumed from hold',
+      { description: dto.note ?? undefined },
+      userId,
+    );
+    return prev;
+  }
+
+  async snooze(id: string, dto: SnoozeDto, _userId: string): Promise<IOpportunity> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
+    const until = new Date();
+    until.setDate(until.getDate() + dto.days);
+    const prev = await OpportunityModel.findByIdAndUpdate(id, { alertSnoozedUntil: until }, { new: true });
+    if (!prev) throw new AppError(404, 'Opportunity not found');
+    return prev;
   }
 }
 

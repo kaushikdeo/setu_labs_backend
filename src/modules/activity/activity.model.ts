@@ -14,6 +14,8 @@ export enum ActivityType {
   WON = 'won',
   LOST = 'lost',
   FOLLOW_UP = 'follow_up',
+  ON_HOLD = 'on_hold',
+  RESUMED = 'resumed',
   SYSTEM = 'system',
 }
 

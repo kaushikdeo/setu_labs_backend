@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { activityService } from './activity.service';
 import { ActivityEntityType, ActivityType } from './activity.model';
-import { prospectService } from '../prospect/prospect.service';
+import { followUpService } from '../follow-up/follow-up.service';
 
 export class ActivityController {
   list = async (req: Request, res: Response, next: NextFunction) => {
@@ -21,16 +21,21 @@ export class ActivityController {
       const userId = req.user!.id;
       const activity = await activityService.add(req.body, userId);
 
-      if (activity.entityType === 'prospect' && activity.type === ActivityType.FOLLOW_UP) {
+      if (activity.type === ActivityType.FOLLOW_UP) {
         const meta = activity.metadata as Record<string, unknown> | undefined;
         const mode = typeof meta?.mode === 'string' ? (meta.mode as string) : undefined;
-        await prospectService.syncFollowUpFromActivity(
-          activity.entityId.toString(),
+        await followUpService.syncFromActivity(
+          activity.entityType,
+          activity.entityId,
           activity.occurredAt,
-          mode
+          mode,
         );
-      } else if (activity.entityType === 'prospect') {
-        await prospectService.touchLastActivity(activity.entityId.toString());
+      } else if (
+        activity.entityType === 'lead' ||
+        activity.entityType === 'prospect' ||
+        activity.entityType === 'opportunity'
+      ) {
+        await followUpService.touchLastActivity(activity.entityType, activity.entityId);
       }
 
       res.status(201).json({ success: true, data: activity });

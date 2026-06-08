@@ -269,13 +269,13 @@ export class QuoteService {
       match.opportunityId = new Types.ObjectId(filters.opportunityId);
     }
     if (filters.status) match.status = filters.status;
-    return QuoteModel.find(match).sort({ version: -1, createdAt: -1 }).exec();
+    return QuoteModel.find(match).sort({ createdAt: -1 }).exec();
   }
 
   async listForOpportunity(opportunityId: string): Promise<IQuote[]> {
     if (!Types.ObjectId.isValid(opportunityId)) throw new AppError(400, 'Invalid opportunity id');
     return QuoteModel.find({ opportunityId: new Types.ObjectId(opportunityId) })
-      .sort({ version: -1 })
+      .sort({ createdAt: -1 })
       .exec();
   }
 

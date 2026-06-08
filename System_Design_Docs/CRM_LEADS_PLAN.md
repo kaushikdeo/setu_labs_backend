@@ -227,15 +227,19 @@ Activity types logged: ( lets implement this later )
 
 **Purpose:** Bulk upload leads from a CSV or Excel file.
 
-**Steps:**
+**Implemented (all-or-nothing):**
 
-1. **Upload file** — drag and drop CSV / XLSX
-2. **Map columns** — match spreadsheet columns to CRM fields
-3. **Preview** — review first 10 rows before import
-4. **Validate** — system flags duplicate mobiles, missing required fields
-5. **Assign** — choose salesperson and default source for the batch
-6. **Import** — confirm and run; progress bar shown
-7. **Result** — summary: imported, skipped, errors with download of error log
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/leads/import/template` | Download blank `.xlsx` — **Leads** sheet (header row only) + **Field guide** sheet (required flags, enum values) |
+| `POST /api/leads/import/validate` | Multipart `file` + JSON `defaults` — validates every row, returns all errors |
+| `POST /api/leads/import` | Body `{ importId }` — commits cached valid rows in a MongoDB transaction |
+
+**Flow:** Leads list → **Import** → upload file → set default assignee / source / temperature → **Validate**. If any row fails (required fields, enums, Joi rules, duplicate mobile in file or DB), every error is listed by row + field; **no leads are created**. When validation passes, **Import N leads** runs atomically (rollback on failure).
+
+**Template columns:** First Name, Last Name, Mobile, Email, Company, Designation, Department, City, State, Source, Campaign, Referred By, Product Interest, Industry, Estimated Value, Expected Close Date, Decision Timeline, Budget Status, Temperature, Tags, Assigned To Email, Follow Up Date, Follow Up Mode, Priority, Notes. Per-row values override batch defaults for source, temperature, and assignee (by email).
+
+**Limits:** 500 rows per file; 5 MB; `.xlsx` / `.xls` / `.csv`.
 
 ---
 

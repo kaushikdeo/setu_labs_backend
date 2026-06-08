@@ -72,7 +72,7 @@ export const listProspectsQuerySchema = Joi.object({
   assignedUserId: Joi.string().pattern(objectIdPattern).optional().allow(''),
   closeFrom: Joi.date().optional().allow(''),
   closeTo: Joi.date().optional().allow(''),
-  scope: Joi.string().valid('all', 'hot', 'qualified', 'mine', 'stale').optional(),
+  scope: Joi.string().valid('all', 'hot', 'qualified', 'mine', 'stale', 'on_hold', 'at_risk', 'needs_attention').optional(),
   page: Joi.number().integer().min(1).optional(),
   limit: Joi.number().integer().min(1).max(100).optional(),
   sort: Joi.string()

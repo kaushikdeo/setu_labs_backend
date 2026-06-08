@@ -20,6 +20,8 @@ import opportunityRoutes from './modules/opportunity/opportunity.route';
 import quoteRoutes from './modules/quote/quote.route';
 import tcTemplateRoutes from './modules/tc-template/tc-template.route';
 import activityRoutes from './modules/activity/activity.route';
+import followUpRoutes from './modules/follow-up/follow-up.route';
+import notificationRoutes from './modules/notification/notification.route';
 
 const app: Application = express();
 
@@ -52,6 +54,8 @@ app.use('/api/opportunities', opportunityRoutes);
 app.use('/api/quotes', quoteRoutes);
 app.use('/api/tc-templates', tcTemplateRoutes);
 app.use('/api/activities', activityRoutes);
+app.use('/api/follow-ups', followUpRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use(errorHandler);
 

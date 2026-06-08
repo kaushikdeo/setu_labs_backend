@@ -1,9 +1,15 @@
 import { PipelineStage, Types } from 'mongoose';
-import { ILead, LeadModel, LeadStatus, LeadTemperature } from './lead.model';
+import { ILead, LeadModel, LeadStatus, LeadTemperature, FollowUpMode } from './lead.model';
 import { ILeadSegment, LeadSegmentModel } from './lead-segment.model';
 import { srCounterService } from '../sr-counter/sr-counter.service';
+import { followUpService } from '../follow-up/follow-up.service';
+import { activityService } from '../activity/activity.service';
+import { ActivityType } from '../activity/activity.model';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
+import { computeHealth, staleCutoffFor } from '../crm-health/compute-health';
+import { enrichWithHealth } from '../crm-health/enrich-health';
+import { PutOnHoldDto, ResumeDto, SnoozeDto } from '../crm-health/hold.types';
 
 const NULLABLE_ENUM_FIELDS = [
   'followUpMode',
@@ -30,7 +36,7 @@ export interface ListLeadsFilters {
   assignedUserId?: string;
   followUpFrom?: string | Date;
   followUpTo?: string | Date;
-  scope?: 'all' | 'hot' | 'stale' | 'mine';
+  scope?: 'all' | 'hot' | 'stale' | 'mine' | 'on_hold' | 'at_risk' | 'needs_attention';
   page?: number;
   limit?: number;
   sort?: string;
@@ -60,6 +66,10 @@ export interface LeadStatsResult {
   totalMTDChangePct: number | null;
   hotCount: number;
   staleCount: number;
+  onHoldCount: number;
+  atRiskCount: number;
+  criticalCount: number;
+  onHoldExpiringSoon: number;
   conversionRate: number;
   conversionRateDelta: number | null;
   avgResponseTimeHours: number | null;
@@ -67,17 +77,17 @@ export interface LeadStatsResult {
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
-const STALE_THRESHOLD_DAYS = 14;
-
 function pad(n: number, width = 4): string {
   return String(n).padStart(width, '0');
 }
 
 function staleCutoff(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - STALE_THRESHOLD_DAYS);
-  return d;
+  return staleCutoffFor('lead');
 }
+
+const ACTIVE_LEAD_STATUSES = {
+  $nin: [LeadStatus.CONVERTED, LeadStatus.NOT_INTERESTED, LeadStatus.ON_HOLD],
+};
 
 function buildSortStage(sort?: string): Record<string, 1 | -1> {
   switch (sort) {
@@ -115,9 +125,13 @@ export class LeadService {
     if (filters.status) match.status = filters.status;
     if (filters.priority) match.priority = filters.priority;
 
-    if (filters.scope === 'stale') {
+    if (filters.scope === 'on_hold') {
+      match.status = LeadStatus.ON_HOLD;
+    } else if (filters.scope === 'stale') {
       match.lastActivityAt = { $lt: staleCutoff() };
-      match.status = { $ne: LeadStatus.CONVERTED };
+      match.status = ACTIVE_LEAD_STATUSES;
+    } else if (filters.scope === 'at_risk' || filters.scope === 'needs_attention') {
+      match.status = ACTIVE_LEAD_STATUSES;
     }
 
     if (filters.followUpFrom || filters.followUpTo) {
@@ -239,6 +253,12 @@ export class LeadService {
                 createdBy: 1,
                 lastActivityAt: 1,
                 convertedAt: 1,
+                holdReason: 1,
+                holdUntil: 1,
+                holdNotes: 1,
+                heldAt: 1,
+                previousStatus: 1,
+                alertSnoozedUntil: 1,
                 createdAt: 1,
                 updatedAt: 1,
               },
@@ -250,8 +270,22 @@ export class LeadService {
     ];
 
     const [aggregated] = await LeadModel.aggregate(pipeline);
-    const data = (aggregated?.data ?? []) as unknown[];
-    const total = (aggregated?.total?.[0]?.count ?? 0) as number;
+    let data = ((aggregated?.data ?? []) as Record<string, unknown>[]).map((row) =>
+      enrichWithHealth(row, 'lead'),
+    );
+
+    if (filters.scope === 'at_risk') {
+      data = data.filter((r) => r.healthStatus === 'at_risk' || r.healthStatus === 'critical');
+    } else if (filters.scope === 'needs_attention') {
+      data = data.filter((r) =>
+        ['attention', 'stale', 'at_risk', 'critical'].includes(String(r.healthStatus)),
+      );
+    }
+
+    const total =
+      filters.scope === 'at_risk' || filters.scope === 'needs_attention'
+        ? data.length
+        : ((aggregated?.total?.[0]?.count ?? 0) as number);
 
     return { data, page, limit, total };
   }
@@ -319,13 +353,19 @@ export class LeadService {
           createdBy: 1,
           lastActivityAt: 1,
           convertedAt: 1,
+          holdReason: 1,
+          holdUntil: 1,
+          holdNotes: 1,
+          heldAt: 1,
+          previousStatus: 1,
+          alertSnoozedUntil: 1,
           createdAt: 1,
           updatedAt: 1,
         },
       },
     ]);
     if (!docs.length) throw new AppError(404, 'Lead not found');
-    return docs[0];
+    return enrichWithHealth(docs[0] as Record<string, unknown>, 'lead');
   }
 
   async create(data: Partial<ILead>, userId: string): Promise<ILead> {
@@ -347,6 +387,9 @@ export class LeadService {
 
   async update(id: string, data: Partial<ILead>, userId: string): Promise<ILead> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
+    const prev = await LeadModel.findById(id);
+    if (!prev) throw new AppError(404, 'Lead not found');
+
     const {
       _id: _ignored1,
       id: _ignored2,
@@ -364,6 +407,30 @@ export class LeadService {
       { new: true, runValidators: true },
     );
     if (!lead) throw new AppError(404, 'Lead not found');
+
+    if ('followUpDate' in updateData) {
+      const newDate = updateData.followUpDate as Date | null | undefined;
+      const prevTime = prev.followUpDate?.getTime();
+      const newTime = newDate ? new Date(newDate).getTime() : undefined;
+      if (!newDate) {
+        await followUpService.clearFollowUp('lead', id);
+      } else if (newTime !== prevTime) {
+        const mode = (updateData.followUpMode ?? lead.followUpMode ?? FollowUpMode.PHONE) as FollowUpMode;
+        await activityService.add(
+          {
+            entityType: 'lead',
+            entityId: id,
+            type: ActivityType.FOLLOW_UP,
+            title: `Follow up via ${mode}`,
+            occurredAt: new Date(newDate),
+            metadata: { mode },
+          },
+          userId,
+        );
+        await followUpService.syncFromActivity('lead', id, new Date(newDate), mode);
+      }
+    }
+
     logger.info('Lead updated', { leadId: id, updatedBy: userId });
     return lead;
   }
@@ -405,7 +472,17 @@ export class LeadService {
             {
               $match: {
                 lastActivityAt: { $lt: cutoff },
-                status: { $ne: LeadStatus.CONVERTED },
+                status: ACTIVE_LEAD_STATUSES,
+              },
+            },
+            { $count: 'count' },
+          ],
+          onHold: [{ $match: { status: LeadStatus.ON_HOLD } }, { $count: 'count' }],
+          onHoldExpiring: [
+            {
+              $match: {
+                status: LeadStatus.ON_HOLD,
+                holdUntil: { $lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), $ne: null },
               },
             },
             { $count: 'count' },
@@ -437,19 +514,128 @@ export class LeadService {
     const lastMonth = (agg?.lastMonth?.[0]?.count ?? 0) as number;
     const hotCount = (agg?.hot?.[0]?.count ?? 0) as number;
     const staleCount = (agg?.stale?.[0]?.count ?? 0) as number;
+    const onHoldCount = (agg?.onHold?.[0]?.count ?? 0) as number;
+    const onHoldExpiringSoon = (agg?.onHoldExpiring?.[0]?.count ?? 0) as number;
     const total = (agg?.total?.[0]?.count ?? 0) as number;
     const converted = (agg?.converted?.[0]?.count ?? 0) as number;
     const avgRaw = (agg?.avgResponse?.[0]?.avg ?? null) as number | null;
+
+    const activeLeads = await LeadModel.find({ status: ACTIVE_LEAD_STATUSES }).lean();
+    let atRiskCount = 0;
+    let criticalCount = 0;
+    for (const lead of activeLeads) {
+      const { healthStatus } = computeHealth({
+        entityType: 'lead',
+        status: lead.status,
+        lastActivityAt: lead.lastActivityAt,
+        followUpDate: lead.followUpDate,
+        expectedCloseDate: lead.expectedCloseDate,
+      });
+      if (healthStatus === 'at_risk') atRiskCount += 1;
+      if (healthStatus === 'critical') criticalCount += 1;
+    }
 
     return {
       totalMTD,
       totalMTDChangePct: lastMonth ? Math.round(((totalMTD - lastMonth) / lastMonth) * 100) : null,
       hotCount,
       staleCount,
+      onHoldCount,
+      atRiskCount,
+      criticalCount,
+      onHoldExpiringSoon,
       conversionRate: total ? Math.round((converted / total) * 100) : 0,
       conversionRateDelta: null,
       avgResponseTimeHours: avgRaw === null ? null : Math.round(avgRaw * 10) / 10,
     };
+  }
+
+  async putOnHold(id: string, dto: PutOnHoldDto, userId: string): Promise<ILead> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
+    const lead = await LeadModel.findById(id);
+    if (!lead) throw new AppError(404, 'Lead not found');
+    if ([LeadStatus.CONVERTED, LeadStatus.NOT_INTERESTED, LeadStatus.ON_HOLD].includes(lead.status)) {
+      throw new AppError(400, 'Lead cannot be put on hold in its current status');
+    }
+
+    lead.previousStatus = lead.status;
+    lead.status = LeadStatus.ON_HOLD;
+    lead.holdReason = dto.holdReason;
+    lead.holdUntil = dto.holdUntil ? new Date(dto.holdUntil) : null;
+    lead.holdNotes = dto.holdNotes ?? null;
+    lead.heldAt = new Date();
+    lead.heldBy = new Types.ObjectId(userId);
+    await lead.save();
+    await followUpService.clearFollowUp('lead', id);
+
+    await activityService.logSystem(
+      'lead',
+      lead._id as Types.ObjectId,
+      ActivityType.ON_HOLD,
+      'Lead put on hold',
+      {
+        description: dto.holdNotes ?? undefined,
+        metadata: { holdReason: dto.holdReason, holdUntil: lead.holdUntil },
+      },
+      userId,
+    );
+    return lead;
+  }
+
+  async resume(id: string, dto: ResumeDto, userId: string): Promise<ILead> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
+    const lead = await LeadModel.findById(id);
+    if (!lead) throw new AppError(404, 'Lead not found');
+    if (lead.status !== LeadStatus.ON_HOLD) throw new AppError(400, 'Lead is not on hold');
+
+    const restoreStatus = (lead.previousStatus as LeadStatus) ?? LeadStatus.NEW;
+    lead.status = restoreStatus;
+    lead.previousStatus = null;
+    lead.holdReason = null;
+    lead.holdUntil = null;
+    lead.holdNotes = null;
+    lead.heldAt = null;
+    lead.heldBy = null;
+    lead.lastActivityAt = new Date();
+    await lead.save();
+
+    if (dto.followUpDate) {
+      const mode = (dto.followUpMode ?? FollowUpMode.PHONE) as FollowUpMode;
+      lead.followUpDate = new Date(dto.followUpDate);
+      lead.followUpMode = mode;
+      await lead.save();
+      await activityService.add(
+        {
+          entityType: 'lead',
+          entityId: id,
+          type: ActivityType.FOLLOW_UP,
+          title: `Follow up via ${mode}`,
+          occurredAt: new Date(dto.followUpDate),
+          metadata: { mode },
+        },
+        userId,
+      );
+      await followUpService.syncFromActivity('lead', id, new Date(dto.followUpDate), mode);
+    }
+
+    await activityService.logSystem(
+      'lead',
+      lead._id as Types.ObjectId,
+      ActivityType.RESUMED,
+      'Lead resumed from hold',
+      { description: dto.note ?? undefined },
+      userId,
+    );
+    return lead;
+  }
+
+  async snooze(id: string, dto: SnoozeDto, _userId: string): Promise<ILead> {
+    if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
+    const until = new Date();
+    until.setDate(until.getDate() + dto.days);
+    const lead = await LeadModel.findByIdAndUpdate(id, { alertSnoozedUntil: until }, { new: true });
+    if (!lead) throw new AppError(404, 'Lead not found');
+    return lead;
   }
 
   // Segments

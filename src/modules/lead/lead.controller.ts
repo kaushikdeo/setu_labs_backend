@@ -1,5 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { leadService, ListLeadsFilters } from './lead.service';
+import { leadImportService } from './lead-import.service';
+import { importDefaultsSchema } from './lead.schema';
+import { followUpService } from '../follow-up/follow-up.service';
+import { ActivityType } from '../activity/activity.model';
 
 function parseFilters(query: Request['query']): ListLeadsFilters {
   const f: ListLeadsFilters = {};
@@ -108,6 +112,110 @@ export class LeadController {
     try {
       await leadService.removeSegment(req.params.id, req.user!.id);
       res.status(200).json({ success: true, message: 'Segment deleted' });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  importTemplate = async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const buffer = leadImportService.buildTemplateBuffer();
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader('Content-Disposition', 'attachment; filename="leads-import-template.xlsx"');
+      res.send(buffer);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  validateImport = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file?.buffer) {
+        res.status(400).json({ success: false, message: 'Excel file is required' });
+        return;
+      }
+      let defaultsRaw: unknown = req.body.defaults;
+      if (typeof defaultsRaw === 'string') {
+        defaultsRaw = JSON.parse(defaultsRaw);
+      }
+      const { error, value: defaults } = importDefaultsSchema.validate(defaultsRaw);
+      if (error) {
+        res.status(400).json({ success: false, message: error.details[0]?.message ?? 'Invalid defaults' });
+        return;
+      }
+      const result = await leadImportService.validate(req.file.buffer, defaults);
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  commitImport = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await leadImportService.commit(req.body.importId, req.user!.id);
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  clearFollowUp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await followUpService.clearFollowUp('lead', req.params.id);
+      res.status(200).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  putOnHold = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await leadService.putOnHold(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  resume = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await leadService.resume(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  snooze = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await leadService.snooze(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  completeFollowUp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const doneAsMap: Record<string, ActivityType> = {
+        call: ActivityType.CALL,
+        email: ActivityType.EMAIL,
+        whatsapp: ActivityType.WHATSAPP,
+        site_visit: ActivityType.SITE_VISIT,
+        demo: ActivityType.DEMO,
+        note: ActivityType.NOTE,
+      };
+      const doneAs = doneAsMap[req.body.doneAs as string] ?? ActivityType.NOTE;
+      const data = await followUpService.completeFollowUp(
+        'lead',
+        req.params.id,
+        { ...req.body, doneAs },
+        req.user!.id,
+      );
+      res.status(200).json({ success: true, data });
     } catch (error) {
       next(error);
     }

@@ -888,7 +888,9 @@ Backend mapping (to be implemented later): a `POST /prospects/:id/follow-up` end
 | GET | `/by-lead/:leadId` | any | Returns the prospect (if any) created from that lead. |
 | GET | `/:id` | any | Prospect detail with `assignee` + `daysInStage`. |
 | POST | `/convert/:leadId` | super_admin, sales_manager, sales | BANT-gated conversion. Creates the prospect, marks the lead `CONVERTED`, relinks lead activities (`linkedProspectId`), logs `CONVERSION`, runs stage automation. |
-| PATCH | `/:id` | super_admin, sales_manager, sales | Update editable fields; recomputes `weightedValue` if `dealValue` or `winProbability` changed; logs a `SYSTEM` activity. Stage/status/code are blacklisted. |
+| PATCH | `/:id` | super_admin, sales_manager, sales | Update editable fields; recomputes `weightedValue` if `dealValue` or `winProbability` changed; logs a `SYSTEM` activity. Stage/status/code are blacklisted. Closed (`won`/`lost`) prospects return 400. |
+
+**Frontend edit:** `/prospects/:id/edit` — `ProspectForm` + `EditProspectPage`; entry from prospect detail **Edit** button and list-table pencil icon (open prospects only).
 | POST | `/:id/stage` | super_admin, sales_manager, sales | Body `{ stage, note? }`. Updates `stageChangedAt`, recomputes probability/weighted, logs `STAGE_CHANGE`, runs `autoTasksForStage`. |
 | POST | `/:id/won` | super_admin, sales_manager, sales | Body `{ poNumber, poDate, note? }`. Sets `status=won`, `winProbability=100`, `weightedValue=dealValue`. Logs `WON`. |
 | POST | `/:id/lost` | super_admin, sales_manager, sales | Body `{ lostReason, lostToCompetitor?, note? }`. Sets `status=lost`, zeros probability/weighted. Logs `LOST`. |

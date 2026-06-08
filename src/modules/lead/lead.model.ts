@@ -1,4 +1,5 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import { HoldReason } from '../crm-health/hold.types';
 
 export enum LeadSource {
   WEB_FORM = 'web_form',
@@ -27,6 +28,7 @@ export enum LeadStatus {
   CONVERTED = 'converted',
   NOT_INTERESTED = 'not_interested',
   STALE = 'stale',
+  ON_HOLD = 'on_hold',
 }
 
 export enum LeadPriority {
@@ -106,6 +108,13 @@ export interface ILead extends Document {
   createdBy: string;
   lastActivityAt: Date;
   convertedAt?: Date | null;
+  holdReason?: HoldReason | null;
+  holdUntil?: Date | null;
+  holdNotes?: string | null;
+  heldAt?: Date | null;
+  heldBy?: Types.ObjectId | null;
+  previousStatus?: string | null;
+  alertSnoozedUntil?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -142,6 +151,13 @@ const leadSchema = new Schema<ILead>(
     createdBy: { type: String, required: true },
     lastActivityAt: { type: Date, default: () => new Date() },
     convertedAt: { type: Date, default: null },
+    holdReason: { type: String, enum: Object.values(HoldReason), default: null },
+    holdUntil: { type: Date, default: null },
+    holdNotes: { type: String, trim: true, default: null },
+    heldAt: { type: Date, default: null },
+    heldBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    previousStatus: { type: String, default: null },
+    alertSnoozedUntil: { type: Date, default: null },
   },
   {
     timestamps: true,

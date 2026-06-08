@@ -587,7 +587,7 @@ List of product and service categories being quoted, with:
 
 #### Tab 4 — Quotes
 
-The central tab for the Opportunity. Shows all quote versions in chronological order.
+The central tab for the Opportunity. Shows all quote versions sorted by `createdAt` (newest first by default). Users can toggle to oldest-first via the sort control in the quotes sidebar.
 
 Columns: Quote number, Date, Version, Amount (excl. GST), Status, Actions
 

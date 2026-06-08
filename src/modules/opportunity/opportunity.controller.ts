@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { ListOpportunitiesFilters, opportunityService } from './opportunity.service';
 import { OpportunityStage, OpportunityStatus, OpportunityType } from './opportunity.model';
+import { followUpService } from '../follow-up/follow-up.service';
+import { ActivityType } from '../activity/activity.model';
 
 function parseFilters(query: Request['query']): ListOpportunitiesFilters {
   const f: ListOpportunitiesFilters = {};
@@ -153,10 +155,69 @@ export class OpportunityController {
     }
   };
 
+  putOnHold = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await opportunityService.putOnHold(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  resume = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await opportunityService.resume(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  snooze = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await opportunityService.snooze(req.params.id, req.body, req.user!.id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   remove = async (req: Request, res: Response, next: NextFunction) => {
     try {
       await opportunityService.remove(req.params.id, req.user!.id);
       res.status(200).json({ success: true, message: 'Opportunity deleted' });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  clearFollowUp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await followUpService.clearFollowUp('opportunity', req.params.id);
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  completeFollowUp = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const doneAsMap: Record<string, ActivityType> = {
+        call: ActivityType.CALL,
+        email: ActivityType.EMAIL,
+        whatsapp: ActivityType.WHATSAPP,
+        site_visit: ActivityType.SITE_VISIT,
+        demo: ActivityType.DEMO,
+        note: ActivityType.NOTE,
+      };
+      const doneAs = doneAsMap[req.body.doneAs as string] ?? ActivityType.NOTE;
+      const data = await followUpService.completeFollowUp(
+        'opportunity',
+        req.params.id,
+        { ...req.body, doneAs },
+        req.user!.id,
+      );
+      res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }

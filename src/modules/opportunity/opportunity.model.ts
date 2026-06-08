@@ -9,6 +9,7 @@ import {
   LeadTemperature,
 } from '../lead/lead.model';
 import { AuthorityType, DecisionMakerCount } from '../prospect/prospect.model';
+import { HoldReason } from '../crm-health/hold.types';
 
 export enum OpportunityStage {
   SCOPE_DEFINED = 'scope_defined',
@@ -25,6 +26,7 @@ export enum OpportunityStage {
 
 export enum OpportunityStatus {
   OPEN = 'open',
+  ON_HOLD = 'on_hold',
   WON = 'won',
   LOST = 'lost',
 }
@@ -171,6 +173,14 @@ export interface IOpportunity extends Document {
   convertedAt?: Date | null;
   convertedBy?: string;
   createdBy: string;
+  holdReason?: HoldReason | null;
+  holdUntil?: Date | null;
+  holdNotes?: string | null;
+  heldAt?: Date | null;
+  heldBy?: Types.ObjectId | null;
+  previousStatus?: string | null;
+  previousStage?: string | null;
+  alertSnoozedUntil?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -307,6 +317,14 @@ const opportunitySchema = new Schema<IOpportunity>(
     convertedAt: { type: Date, default: null },
     convertedBy: { type: String, trim: true },
     createdBy: { type: String, required: true },
+    holdReason: { type: String, enum: Object.values(HoldReason), default: null },
+    holdUntil: { type: Date, default: null },
+    holdNotes: { type: String, trim: true, default: null },
+    heldAt: { type: Date, default: null },
+    heldBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    previousStatus: { type: String, default: null },
+    previousStage: { type: String, default: null },
+    alertSnoozedUntil: { type: Date, default: null },
   },
   {
     timestamps: true,
