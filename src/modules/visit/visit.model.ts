@@ -19,6 +19,8 @@ export interface IVisit extends Document {
   siteId: Types.ObjectId;
   type: VisitType;
   scheduledDate: Date;
+  validationDate?: Date;
+  dueDate?: Date;
   completedDate?: Date;
   assignedEngineerId: Types.ObjectId;
   status: VisitStatus;
@@ -36,6 +38,8 @@ const visitSchema = new Schema<IVisit>(
     siteId: { type: Schema.Types.ObjectId, ref: 'Site', required: true },
     type: { type: String, enum: Object.values(VisitType), required: true },
     scheduledDate: { type: Date, required: true },
+    validationDate: { type: Date },
+    dueDate: { type: Date },
     completedDate: { type: Date },
     assignedEngineerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     status: {

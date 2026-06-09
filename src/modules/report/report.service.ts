@@ -85,7 +85,7 @@ export class ReportService {
                 $map: {
                   input: '$visit',
                   as: 'v',
-                  in: { id: '$$v._id', code: '$$v.code', srNumber: '$$v.srNumber', type: '$$v.type', scheduledDate: '$$v.scheduledDate', completedDate: '$$v.completedDate' },
+                  in: { id: '$$v._id', code: '$$v.code', srNumber: '$$v.srNumber', type: '$$v.type', scheduledDate: '$$v.scheduledDate', validationDate: '$$v.validationDate', dueDate: '$$v.dueDate', completedDate: '$$v.completedDate' },
                 },
               },
               0,
@@ -175,6 +175,8 @@ export class ReportService {
             srNumber: visit.srNumber,
             type: visit.type,
             scheduledDate: visit.scheduledDate,
+            validationDate: visit.validationDate,
+            dueDate: visit.dueDate,
             completedDate: visit.completedDate,
             notes: visit.notes,
           }

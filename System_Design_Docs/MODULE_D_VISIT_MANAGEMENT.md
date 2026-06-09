@@ -17,6 +17,8 @@ Handles scheduling engineer visits to customer sites, assigning equipment tasks 
 | siteId | ObjectId | Ref: Site |
 | type | enum | `validation` or `calibration` |
 | scheduledDate | Date | Required |
+| validationDate | Date | Set when starting the service request from Visit Detail; used on certificates |
+| dueDate | Date | Optional manual override for certificate due date; otherwise auto from validation date + test type recurrence |
 | completedDate | Date | Set on auto-completion |
 | assignedEngineerId | ObjectId | Ref: User |
 | status | enum | `scheduled → in_progress → completed / cancelled` |
@@ -51,7 +53,8 @@ VisitTask: PENDING → IN_PROGRESS → COMPLETED
                               ↘ FAILED
 ```
 
-- Visit auto-transitions to `IN_PROGRESS` when first task is started.
+- Visit can be started explicitly from Visit Detail (`POST /api/visits/:id/start`) with a validation date; requires at least one task when status is `scheduled`.
+- Visit also auto-transitions to `IN_PROGRESS` when the first task is started (validation date may be backfilled later from Visit Detail).
 - Visit auto-transitions to `COMPLETED` when all tasks reach `completed`.
 
 ---
@@ -60,11 +63,29 @@ VisitTask: PENDING → IN_PROGRESS → COMPLETED
 
 When `POST /api/visits/:id/tasks/:taskId/start` is called:
 
-1. Check if task has `instrumentId` assigned.
-2. If yes, fetch the `MasterInstrument` record.
-3. If `calibrationDueDate < now` or `status !== ACTIVE` → throw `AppError(403, ...)`.
-4. Auto-update instrument status to `expired`.
-5. If valid → set task status to `in_progress`.
+1. Optionally accept `equipmentId` and `area` to correct the task assignment before starting.
+2. Check if task has `instrumentId` assigned.
+3. If yes, fetch the `MasterInstrument` record.
+4. If `calibrationDueDate < now` or `status !== ACTIVE` → throw `AppError(403, ...)`.
+5. Auto-update instrument status to `expired`.
+6. If valid → set task status to `in_progress`.
+
+---
+
+## Equipment / Area Correction
+
+Equipment is initially assigned when a task is created, but can be corrected before execution:
+
+| Screen | Task status | API |
+|---|---|---|
+| Start Task (`/visits/:id/tasks/:taskId/start`) | `pending` | `POST .../start` with optional `equipmentId`, `area` |
+| Add Test Result | `in_progress` | `PATCH .../tasks/:taskId` with `equipmentId`, `area` before saving result |
+
+Rules:
+- Each equipment item can only be assigned to one task per visit (409 if duplicate).
+- `area` defaults from equipment (`equipment.area || equipment.name`) when not provided.
+- Equipment cannot be changed on completed or failed tasks.
+- PDF certificates read equipment from the task at render time; changing equipment after tests are completed updates certificate metadata for all tests on that task.
 
 ---
 
@@ -75,6 +96,7 @@ GET    /api/visits                            — list (filter: status, type, as
 POST   /api/visits                            — create (super_admin, validation_head)
 GET    /api/visits/:id                        — detail + tasks
 PATCH  /api/visits/:id                        — update (super_admin, validation_head)
+POST   /api/visits/:id/start                  — start service request / set validation date (authenticated)
 GET    /api/visits/:id/tasks                  — list tasks
 POST   /api/visits/:id/tasks                  — add task (authenticated)
 PATCH  /api/visits/:id/tasks/:taskId          — update task fields
@@ -92,7 +114,8 @@ POST   /api/visits/:id/tasks/:taskId/complete — complete task + fill execution
 | `/visits/add` | AddVisitPage | super_admin, validation_head |
 | `/visits/:id/edit` | AddVisitPage (edit mode) | super_admin |
 | `/visits/:id` | VisitDetailPage | All authenticated |
-| `/visits/:id/tasks/:taskId/execute` | ExecuteTaskPage | All authenticated |
+| `/visits/:id/tasks/:taskId/start` | StartTaskPage | All authenticated |
+| `/visits/:id/tasks/:taskId` | VisitTaskDetailPage | All authenticated |
 
 ### Create flow (`/visits/add`)
 

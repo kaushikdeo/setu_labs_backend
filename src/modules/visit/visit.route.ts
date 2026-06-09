@@ -10,6 +10,7 @@ import {
   createTaskSchema,
   updateTaskSchema,
   startTaskSchema,
+  startVisitSchema,
   completeTaskSchema,
 } from './visit.schema';
 import testResultRoutes from '../test-result/test-result.route';
@@ -35,6 +36,13 @@ router.patch(
   requireRole(UserRole.SUPER_ADMIN, UserRole.VALIDATION_HEAD),
   validate(updateVisitSchema),
   visitController.updateVisit,
+);
+
+router.post(
+  '/:id/start',
+  authenticate,
+  validate(startVisitSchema),
+  visitController.startVisit,
 );
 
 router.delete(

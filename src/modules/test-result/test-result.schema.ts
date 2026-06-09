@@ -13,16 +13,28 @@ const environmentalConditionsSchema = Joi.object({
 export const createTestResultSchema = Joi.object({
   testTypeId: Joi.string().required(),
   instrumentId: Joi.string().required(),
-  testPerformedBy: Joi.string().optional().allow(''),
-  witness: Joi.string().optional().allow(''),
+  testPerformedBy: Joi.string().trim().required().messages({
+    'any.required': 'Test Performed By is required',
+    'string.empty': 'Test Performed By is required',
+  }),
+  witness: Joi.string().trim().required().messages({
+    'any.required': 'Client Witness is required',
+    'string.empty': 'Client Witness is required',
+  }),
   visualInspection: Joi.string().optional().allow(''),
   environmentalConditions: environmentalConditionsSchema,
   readings: Joi.object().required(),
 }).unknown(true);
 
 export const updateTestResultSchema = Joi.object({
-  testPerformedBy: Joi.string().optional().allow(''),
-  witness: Joi.string().optional().allow(''),
+  testPerformedBy: Joi.string().trim().required().messages({
+    'any.required': 'Test Performed By is required',
+    'string.empty': 'Test Performed By is required',
+  }),
+  witness: Joi.string().trim().required().messages({
+    'any.required': 'Client Witness is required',
+    'string.empty': 'Client Witness is required',
+  }),
   visualInspection: Joi.string().optional().allow(''),
   environmentalConditions: environmentalConditionsSchema,
   readings: Joi.object().required(),

@@ -34,6 +34,35 @@ function padSeq(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+async function resolveEquipmentForTask(
+  visitId: string,
+  taskId: string,
+  equipmentId: string,
+  area?: string,
+): Promise<{ equipmentId: Types.ObjectId; area?: string }> {
+  const equipment = await EquipmentModel.findById(equipmentId).lean();
+  if (!equipment) throw new AppError(404, 'Equipment not found');
+
+  const duplicate = await VisitTaskModel.findOne({
+    visitId,
+    equipmentId,
+    _id: { $ne: taskId },
+  }).lean();
+  if (duplicate) {
+    throw new AppError(409, 'This equipment is already assigned to another task on this visit');
+  }
+
+  let resolvedArea = area?.trim();
+  if (!resolvedArea) {
+    resolvedArea = equipment.area?.trim() || equipment.name;
+  }
+
+  return {
+    equipmentId: new Types.ObjectId(equipmentId),
+    area: resolvedArea,
+  };
+}
+
 export class VisitService {
   async getAllVisits(filters: any = {}): Promise<any[]> {
     const matchStage: any = {};
@@ -97,6 +126,8 @@ export class VisitService {
           srNumber: 1,
           type: 1,
           scheduledDate: 1,
+          validationDate: 1,
+          dueDate: 1,
           completedDate: 1,
           status: 1,
           notes: 1,
@@ -167,6 +198,8 @@ export class VisitService {
           srNumber: 1,
           type: 1,
           scheduledDate: 1,
+          validationDate: 1,
+          dueDate: 1,
           completedDate: 1,
           status: 1,
           notes: 1,
@@ -225,11 +258,92 @@ export class VisitService {
   }
 
   async updateVisit(id: string, data: Partial<IVisit>, userId: string): Promise<IVisit> {
+    const existing = await VisitModel.findById(id);
+    if (!existing) throw new AppError(404, 'Visit not found');
+
     const { _id, id: _, __v, createdAt, updatedAt, createdBy, ...updateData } = data as any;
+
+    if (updateData.validationDate !== undefined) {
+      if (
+        existing.status !== VisitStatus.IN_PROGRESS &&
+        existing.status !== VisitStatus.SCHEDULED
+      ) {
+        throw new AppError(400, 'Validation date cannot be changed on a completed or cancelled visit');
+      }
+      if (existing.status === VisitStatus.SCHEDULED) {
+        throw new AppError(400, 'Use start service request to set the initial validation date');
+      }
+    }
+
+    if (updateData.dueDate !== undefined) {
+      if (existing.status !== VisitStatus.IN_PROGRESS) {
+        throw new AppError(400, 'Due date can only be changed on an in-progress visit');
+      }
+      if (updateData.dueDate === null) {
+        const visit = await VisitModel.findByIdAndUpdate(
+          id,
+          { $unset: { dueDate: 1 } },
+          { new: true },
+        );
+        if (!visit) throw new AppError(404, 'Visit not found');
+        logger.info('Visit due date cleared', { visitId: id, updatedBy: userId });
+        return visit;
+      }
+    }
+
     const visit = await VisitModel.findByIdAndUpdate(id, updateData, { new: true });
     if (!visit) throw new AppError(404, 'Visit not found');
     logger.info('Visit updated', { visitId: id, updatedBy: userId });
     return visit;
+  }
+
+  async startVisit(
+    visitId: string,
+    validationDate: Date,
+    userId: string,
+    dueDate?: Date,
+  ): Promise<IVisit> {
+    const visit = await VisitModel.findById(visitId);
+    if (!visit) throw new AppError(404, 'Visit not found');
+
+    const startPayload: Partial<IVisit> = { validationDate };
+    if (dueDate) startPayload.dueDate = dueDate;
+
+    if (visit.status === VisitStatus.SCHEDULED) {
+      const taskCount = await VisitTaskModel.countDocuments({ visitId });
+      if (taskCount === 0) {
+        throw new AppError(400, 'Add at least one equipment task before starting the service request');
+      }
+
+      const updated = await VisitModel.findByIdAndUpdate(
+        visitId,
+        {
+          ...startPayload,
+          status: VisitStatus.IN_PROGRESS,
+        },
+        { new: true },
+      );
+      if (!updated) throw new AppError(404, 'Visit not found');
+      logger.info('Visit started', { visitId, validationDate, dueDate, startedBy: userId });
+      return updated;
+    }
+
+    if (visit.status === VisitStatus.IN_PROGRESS && !visit.validationDate) {
+      const updated = await VisitModel.findByIdAndUpdate(
+        visitId,
+        startPayload,
+        { new: true },
+      );
+      if (!updated) throw new AppError(404, 'Visit not found');
+      logger.info('Visit validation date set', { visitId, validationDate, dueDate, setBy: userId });
+      return updated;
+    }
+
+    if (visit.status === VisitStatus.IN_PROGRESS && visit.validationDate) {
+      throw new AppError(400, 'Validation date is already set for this service request');
+    }
+
+    throw new AppError(400, 'Cannot set validation date on a completed or cancelled visit');
   }
 
   async deleteVisit(id: string, userId: string): Promise<void> {
@@ -365,7 +479,30 @@ export class VisitService {
   }
 
   async updateTask(visitId: string, taskId: string, data: Partial<IVisitTask>, userId: string): Promise<IVisitTask> {
+    const existing = await VisitTaskModel.findOne({ _id: taskId, visitId });
+    if (!existing) throw new AppError(404, 'Task not found');
+    if (
+      existing.status !== TaskStatus.PENDING &&
+      existing.status !== TaskStatus.IN_PROGRESS
+    ) {
+      throw new AppError(400, 'Cannot update equipment on a completed or failed task');
+    }
+
     const { _id, id: _, __v, createdAt, updatedAt, createdBy, ...updateData } = data as any;
+
+    if (updateData.equipmentId) {
+      const resolved = await resolveEquipmentForTask(
+        visitId,
+        taskId,
+        updateData.equipmentId,
+        updateData.area,
+      );
+      updateData.equipmentId = resolved.equipmentId;
+      updateData.area = resolved.area;
+    } else if (updateData.area !== undefined) {
+      updateData.area = updateData.area?.trim() || undefined;
+    }
+
     const task = await VisitTaskModel.findOneAndUpdate(
       { _id: taskId, visitId },
       updateData,
@@ -386,6 +523,19 @@ export class VisitService {
     const { _id, id: _, __v, createdAt, updatedAt, createdBy, status, ...setupData } = data as any;
 
     if (setupData.instrumentId === '') delete setupData.instrumentId;
+
+    if (setupData.equipmentId) {
+      const resolved = await resolveEquipmentForTask(
+        visitId,
+        taskId,
+        setupData.equipmentId,
+        setupData.area,
+      );
+      setupData.equipmentId = resolved.equipmentId;
+      setupData.area = resolved.area;
+    } else if (setupData.area !== undefined) {
+      setupData.area = setupData.area?.trim() || undefined;
+    }
 
     const instrumentId = setupData.instrumentId || task.instrumentId;
     if (instrumentId) {

@@ -89,6 +89,25 @@ export class VisitController {
     }
   };
 
+  startVisit = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const visit = await visitService.startVisit(
+        req.params.id,
+        req.body.validationDate,
+        req.user!.id,
+        req.body.dueDate,
+      );
+      await auditService.logEvent('visit.start', req, req.user!.id, {
+        visitId: req.params.id,
+        validationDate: visit.validationDate,
+        dueDate: visit.dueDate,
+      });
+      res.status(200).json({ success: true, data: visit });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   startTask = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const task = await visitService.startTask(req.params.id, req.params.taskId, req.body, req.user!.id);

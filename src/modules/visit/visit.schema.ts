@@ -12,10 +12,17 @@ export const createVisitSchema = Joi.object({
 export const updateVisitSchema = Joi.object({
   type: Joi.string().valid('validation', 'calibration').optional(),
   scheduledDate: Joi.date().optional(),
+  validationDate: Joi.date().optional(),
+  dueDate: Joi.date().optional().allow(null),
   assignedEngineerId: Joi.string().optional(),
   status: Joi.string().valid('scheduled', 'in_progress', 'completed', 'cancelled').optional(),
   completedDate: Joi.date().optional(),
   notes: Joi.string().optional().allow(''),
+}).unknown(true);
+
+export const startVisitSchema = Joi.object({
+  validationDate: Joi.date().required(),
+  dueDate: Joi.date().optional(),
 }).unknown(true);
 
 const plannedTestSchema = Joi.object({
@@ -37,6 +44,7 @@ export const createTaskSchema = Joi.object({
 }).unknown(true);
 
 export const updateTaskSchema = Joi.object({
+  equipmentId: Joi.string().optional(),
   instrumentId: Joi.string().optional().allow(''),
   plannedTests: Joi.array().items(plannedTestSchema).optional(),
   area: Joi.string().optional().allow(''),
@@ -50,6 +58,8 @@ export const updateTaskSchema = Joi.object({
 }).unknown(true);
 
 export const startTaskSchema = Joi.object({
+  equipmentId: Joi.string().optional(),
+  area: Joi.string().optional().allow(''),
   instrumentId: Joi.string().optional().allow(''),
   testPerformedBy: Joi.string().optional().allow(''),
   witness: Joi.string().optional().allow(''),
