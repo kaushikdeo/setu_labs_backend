@@ -14,7 +14,12 @@ export class ReportController {
   createReport = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const report = await reportService.createReport(req.body.visitId, req.user!.id);
-      res.status(201).json({ success: true, data: report });
+      const enriched = await reportService.getReportById(
+        report._id.toString(),
+        req.user!.role,
+        req.user!.customerId,
+      );
+      res.status(201).json({ success: true, data: enriched });
       fireAudit(() => auditService.logEvent('report.create', req, req.user!.id, {
         reportId: report._id,
         visitId: req.body.visitId,

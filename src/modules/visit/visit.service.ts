@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { VisitModel, IVisit, VisitStatus, VisitType } from './visit.model';
 import { VisitTaskModel, IVisitTask, TaskStatus } from './visit-task.model';
 import { MasterInstrumentModel, InstrumentStatus } from '../instrument/instrument.model';
+import { EquipmentModel } from '../equipment/equipment.model';
 import { CustomerModel } from '../customer/customer.model';
 import { OrganizationModel, SrCounterScope } from '../organization/organization.model';
 import { TestTypeModel } from '../test-type/test-type.model';
@@ -286,7 +287,7 @@ export class VisitService {
           createdBy: 1,
           createdAt: 1,
           plannedTests: 1,
-          equipment: { $arrayElemAt: [{ $map: { input: '$equipment', as: 'e', in: { id: '$$e._id', name: '$$e.name', code: '$$e.code', serialNumber: '$$e.serialNumber', make: '$$e.make', model: '$$e.model' } } }, 0] },
+          equipment: { $arrayElemAt: [{ $map: { input: '$equipment', as: 'e', in: { id: '$$e._id', name: '$$e.name', code: '$$e.code', serialNumber: '$$e.serialNumber', make: '$$e.make', model: '$$e.model', area: '$$e.area' } } }, 0] },
           instrument: { $arrayElemAt: [{ $map: { input: '$instrument', as: 'i', in: { id: '$$i._id', name: '$$i.name', code: '$$i.code', calibrationDueDate: '$$i.calibrationDueDate', status: '$$i.status' } } }, 0] },
         },
       },
@@ -337,8 +338,24 @@ export class VisitService {
       }
     }
 
+    let instrumentId = data.instrumentId;
+    if (!instrumentId && plannedTests.length > 0) {
+      const first = plannedTests.find((pt) => pt.instrumentId);
+      if (first?.instrumentId) instrumentId = first.instrumentId;
+    }
+
+    let area = data.area?.trim();
+    if (!area && data.equipmentId) {
+      const equipment = await EquipmentModel.findById(data.equipmentId).lean();
+      if (equipment) {
+        area = equipment.area?.trim() || equipment.name;
+      }
+    }
+
     const task = await VisitTaskModel.create({
       ...data,
+      instrumentId,
+      area,
       plannedTests,
       visitId,
       createdBy: userId,

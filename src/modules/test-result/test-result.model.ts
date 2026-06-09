@@ -1,5 +1,15 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
+export interface IEnvironmentalConditions {
+  temperatureStart?: number;
+  temperatureEnd?: number;
+  humidityStart?: number;
+  humidityEnd?: number;
+  pressureStart?: number;
+  pressureEnd?: number;
+  remarks?: string;
+}
+
 export interface ITaskTestResult extends Document {
   visitTaskId: Types.ObjectId;
   testTypeId: Types.ObjectId;
@@ -8,6 +18,7 @@ export interface ITaskTestResult extends Document {
   testPerformedBy?: string;
   witness?: string;
   visualInspection?: string;
+  environmentalConditions?: IEnvironmentalConditions;
   readings: Record<string, any>;
   calculatedValues: Record<string, any>;
   result: 'Pass' | 'Fail';
@@ -18,6 +29,19 @@ export interface ITaskTestResult extends Document {
   updatedAt: Date;
 }
 
+const environmentalConditionsSchema = new Schema<IEnvironmentalConditions>(
+  {
+    temperatureStart: { type: Number },
+    temperatureEnd: { type: Number },
+    humidityStart: { type: Number },
+    humidityEnd: { type: Number },
+    pressureStart: { type: Number },
+    pressureEnd: { type: Number },
+    remarks: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
 const testResultSchema = new Schema<ITaskTestResult>(
   {
     visitTaskId: { type: Schema.Types.ObjectId, ref: 'VisitTask', required: true },
@@ -27,6 +51,7 @@ const testResultSchema = new Schema<ITaskTestResult>(
     testPerformedBy: { type: String, trim: true },
     witness: { type: String, trim: true },
     visualInspection: { type: String, trim: true },
+    environmentalConditions: { type: environmentalConditionsSchema },
     readings: { type: Schema.Types.Mixed, required: true },
     calculatedValues: { type: Schema.Types.Mixed, default: {} },
     result: { type: String, enum: ['Pass', 'Fail'], required: true },

@@ -97,6 +97,7 @@ export class TestResultService {
           testPerformedBy: 1,
           witness: 1,
           visualInspection: 1,
+          environmentalConditions: 1,
           createdBy: 1,
           completedAt: 1,
           createdAt: 1,
@@ -170,6 +171,7 @@ export class TestResultService {
           testPerformedBy: 1,
           witness: 1,
           visualInspection: 1,
+          environmentalConditions: 1,
           createdBy: 1,
           completedAt: 1,
           createdAt: 1,
@@ -206,7 +208,15 @@ export class TestResultService {
 
   async create(
     visitTaskId: string,
-    data: { testTypeId: string; instrumentId: string; testPerformedBy?: string; witness?: string; visualInspection?: string; readings: Record<string, any> },
+    data: {
+      testTypeId: string;
+      instrumentId: string;
+      testPerformedBy?: string;
+      witness?: string;
+      visualInspection?: string;
+      environmentalConditions?: Record<string, any>;
+      readings: Record<string, any>;
+    },
     userId: string,
   ): Promise<ITaskTestResult> {
     const task = await VisitTaskModel.findById(visitTaskId);
@@ -235,6 +245,7 @@ export class TestResultService {
       testPerformedBy: data.testPerformedBy,
       witness: data.witness,
       visualInspection: data.visualInspection,
+      environmentalConditions: data.environmentalConditions,
       readings: data.readings,
       calculatedValues,
       result,
@@ -261,7 +272,13 @@ export class TestResultService {
 
   async update(
     resultId: string,
-    data: { testPerformedBy?: string; witness?: string; visualInspection?: string; readings: Record<string, any> },
+    data: {
+      testPerformedBy?: string;
+      witness?: string;
+      visualInspection?: string;
+      environmentalConditions?: Record<string, any>;
+      readings: Record<string, any>;
+    },
     userId: string,
   ): Promise<ITaskTestResult> {
     const existing = await TaskTestResultModel.findById(resultId);
@@ -298,6 +315,7 @@ export class TestResultService {
         testPerformedBy: data.testPerformedBy,
         witness: data.witness,
         visualInspection: data.visualInspection,
+        environmentalConditions: data.environmentalConditions,
         calculatedValues,
         result,
         conclusion,

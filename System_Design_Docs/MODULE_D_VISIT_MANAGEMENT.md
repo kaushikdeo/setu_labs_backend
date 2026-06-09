@@ -90,8 +90,31 @@ POST   /api/visits/:id/tasks/:taskId/complete — complete task + fill execution
 |---|---|---|
 | `/visits` | VisitsPage | All authenticated |
 | `/visits/add` | AddVisitPage | super_admin, validation_head |
+| `/visits/:id/edit` | AddVisitPage (edit mode) | super_admin |
 | `/visits/:id` | VisitDetailPage | All authenticated |
 | `/visits/:id/tasks/:taskId/execute` | ExecuteTaskPage | All authenticated |
+
+### Create flow (`/visits/add`)
+
+Single scrollable page with a sticky 6-step stepper. All sections are visible at once; clicking a step scrolls to that section.
+
+| Step | Section | Data |
+|---|---|---|
+| 1 | Service details | `type`, `scheduledDate` |
+| 2 | Customer & site | `customerId`, `siteId` |
+| 3 | Area / equipment | One or more equipment rows |
+| 4 | Master instruments | Instruments for active area |
+| 5 | Tests to perform | Test types for active area |
+| 6 | Assign engineer | `assignedEngineerId`, optional `notes` |
+
+Environmental conditions are **not** captured at create time. See [TEST_ENVIRONMENTAL_CONDITIONS.md](../../../System_Design_Docs/TEST_ENVIRONMENTAL_CONDITIONS.md).
+
+Submit sequence:
+1. `POST /api/visits` with visit payload
+2. For each equipment row: `POST /api/visits/:id/tasks` with `{ equipmentId, plannedTests }`
+3. Redirect to `/visits/:id`
+
+Edit mode shows steps 1, 2, 6 only; equipment/tasks remain on the detail page.
 
 ---
 
