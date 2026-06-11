@@ -27,6 +27,24 @@ pnpm script:migrate-test-type-index --confirm
 
 Drops legacy global `code_1` index on `testtypes` that blocked duplicate codes across orgs.
 
+### Clone test types between orgs
+
+```bash
+# Dry run
+pnpm script:clone-test-types --from-org-id <sourceOrgId> --to-org-id <targetOrgId>
+
+# Clone one test by base/full code
+pnpm script:clone-test-types --from-org-id <source> --to-org-id <target> --code AIR_VELOCITY_TEST_AREA
+
+# Execute (skips target org tests with same calculationKey or name)
+pnpm script:clone-test-types --from-org-id <source> --to-org-id <target> --confirm
+
+# Overwrite skip — clone duplicates too
+pnpm script:clone-test-types --from-org-id <source> --to-org-id <target> --force --confirm
+```
+
+New codes get a fresh unique suffix in the target org.
+
 ---
 
 ## Schema (Wave 1)

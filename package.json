@@ -15,6 +15,8 @@
     "script:migrate-multi-tenant": "cross-env NODE_ENV=development ts-node --transpile-only scripts/migrate-multi-tenant.ts",
     "script:verify-multi-tenant": "cross-env NODE_ENV=development ts-node --transpile-only scripts/verify-multi-tenant.ts",
     "script:migrate-test-type-index": "cross-env NODE_ENV=development ts-node --transpile-only scripts/migrate-test-type-index.ts",
+    "script:clone-test-types": "cross-env NODE_ENV=development ts-node --transpile-only scripts/clone-test-types.ts",
+    "script:seed-recovery-test": "cross-env NODE_ENV=development ts-node --transpile-only scripts/seed-recovery-test-type.ts",
     "script:delete-users": "cross-env NODE_ENV=development ts-node --transpile-only scripts/delete-users.ts",
     "script:delete-visits": "cross-env NODE_ENV=development ts-node --transpile-only scripts/delete-visits.ts",
     "script:delete-all": "cross-env NODE_ENV=development ts-node --transpile-only scripts/delete-all.ts",

@@ -129,6 +129,7 @@ export function calculate(
     const sectionResults = readings.sections.map((section, idx) => {
       const { enriched, recoveryIndex, finalWithinLimits } = enrichRows(section.rows ?? [], limits);
       const label =
+        (section.fields?.equipmentDetails as string) ||
         (section.fields?.roomName as string) ||
         (section.fields?.locationName as string) ||
         `Section ${idx + 1}`;

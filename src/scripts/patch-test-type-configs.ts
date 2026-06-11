@@ -5,6 +5,17 @@
 import mongoose from 'mongoose';
 import { TestTypeModel } from '../modules/test-type/test-type.model';
 import { env } from '../config/env';
+import { RECOVERY_TEST_PRESET } from '../modules/test-type/presets/recovery-test.preset';
+
+const RECOVERY_CONFIG = {
+  calculationKey: RECOVERY_TEST_PRESET.calculationKey,
+  acceptanceCriteria: RECOVERY_TEST_PRESET.acceptanceCriteria,
+  headerFields: RECOVERY_TEST_PRESET.headerFields,
+  tableColumns: RECOVERY_TEST_PRESET.tableColumns,
+  resultSummaryColumns: RECOVERY_TEST_PRESET.resultSummaryColumns,
+  showEquipmentDetails: RECOVERY_TEST_PRESET.showEquipmentDetails,
+  showGraph: RECOVERY_TEST_PRESET.showGraph,
+};
 
 const AIR_VELOCITY_CONFIG = {
   calculationKey: 'air_velocity_acph_pao',
@@ -87,6 +98,7 @@ const PARTICLE_CONFIG = {
 
 function resolveConfig(name: string) {
   const lower = name.toLowerCase();
+  if (lower.includes('recovery')) return RECOVERY_CONFIG;
   if (lower.includes('hepa') || lower.includes('integrity') || lower.includes('dop')) return HEPA_CONFIG;
   if (lower.includes('particle')) return PARTICLE_CONFIG;
   if (lower.includes('air') || lower.includes('velocity') || lower.includes('acph')) return AIR_VELOCITY_CONFIG;
