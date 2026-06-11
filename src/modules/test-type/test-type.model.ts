@@ -45,7 +45,7 @@ export interface ITestType extends Document {
   showGraph?: boolean;
   dueDateDays?: number;
   isActive: boolean;
-  organizationId?: Types.ObjectId | null;
+  organizationId: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,7 +86,7 @@ const resultSummaryColumnSchema = new Schema<IResultSummaryColumn>(
 
 const testTypeSchema = new Schema<ITestType>(
   {
-    code: { type: String, required: true, unique: true, trim: true },
+    code: { type: String, required: true, trim: true },
     name: { type: String, required: true, trim: true },
     abbreviation: { type: String, trim: true, uppercase: true, maxlength: 6 },
     description: { type: String, trim: true },
@@ -105,7 +105,7 @@ const testTypeSchema = new Schema<ITestType>(
     showGraph: { type: Boolean, default: true },
     dueDateDays: { type: Number },
     isActive: { type: Boolean, default: true },
-    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
   },
   {
     timestamps: true,
@@ -119,5 +119,7 @@ const testTypeSchema = new Schema<ITestType>(
     },
   },
 );
+
+testTypeSchema.index({ organizationId: 1, code: 1 }, { unique: true });
 
 export const TestTypeModel = model<ITestType>('TestType', testTypeSchema);

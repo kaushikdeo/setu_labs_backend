@@ -15,6 +15,17 @@ Wave 1 added optional `organizationId` fields and a migration script. Wave 2 bac
 - Self-registration (when enabled) creates stub org + `super_admin` user
 - Admin `createUser` inherits creator's `organizationId`
 - Cron jobs loop `getAllActiveOrgConfigs()`
+- Test type `code` is unique per org (`{ organizationId, code }`); on create an 8-char hex suffix is appended (e.g. `AIR_VELOCITY_TEST_a1b2c3d4`)
+
+### Index migration (test types)
+
+After deploy, run once per environment:
+
+```bash
+pnpm script:migrate-test-type-index --confirm
+```
+
+Drops legacy global `code_1` index on `testtypes` that blocked duplicate codes across orgs.
 
 ---
 

@@ -1,6 +1,6 @@
 import { TestTypeModel, ITestType } from './test-type.model';
 import { AppError } from '../../utils/app-error';
-import { orgFilter } from '../../utils/tenant';
+import { appendUniqueId, orgFilter } from '../../utils/tenant';
 
 export class TestTypeService {
   async getAll(organizationId: string): Promise<ITestType[]> {
@@ -22,12 +22,24 @@ export class TestTypeService {
   }
 
   async create(data: Partial<ITestType>, organizationId: string): Promise<ITestType> {
-    const existing = await TestTypeModel.findOne({ code: data.code, ...orgFilter(organizationId) });
-    if (existing) throw new AppError(409, `Test type with code "${data.code}" already exists`);
-    return TestTypeModel.create({ ...data, ...orgFilter(organizationId) });
+    if (!data.code?.trim()) {
+      throw new AppError(400, 'Test type code is required');
+    }
+
+    const code = appendUniqueId(data.code);
+    return TestTypeModel.create({ ...data, code, ...orgFilter(organizationId) });
   }
 
   async update(id: string, data: Partial<ITestType>, organizationId: string): Promise<ITestType> {
+    if (data.code) {
+      const duplicate = await TestTypeModel.findOne({
+        code: data.code,
+        _id: { $ne: id },
+        ...orgFilter(organizationId),
+      });
+      if (duplicate) throw new AppError(409, `Test type with code "${data.code}" already exists`);
+    }
+
     const testType = await TestTypeModel.findOneAndUpdate({ _id: id, ...orgFilter(organizationId) }, data, { new: true, runValidators: true });
     if (!testType) throw new AppError(404, 'Test type not found');
     return testType;
