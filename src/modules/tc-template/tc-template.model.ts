@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export enum TcOpportunityType {
   SUPPLY_INSTALL = 'supply_install',
@@ -13,6 +13,7 @@ export interface ITcTemplate extends Document {
   opportunityType: TcOpportunityType;
   body: string;
   isDefault: boolean;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -28,6 +29,7 @@ const tcTemplateSchema = new Schema<ITcTemplate>(
     },
     body: { type: String, required: true },
     isDefault: { type: Boolean, default: false },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

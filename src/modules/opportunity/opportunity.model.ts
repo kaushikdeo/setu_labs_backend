@@ -172,6 +172,7 @@ export interface IOpportunity extends Document {
 
   convertedAt?: Date | null;
   convertedBy?: string;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   holdReason?: HoldReason | null;
   holdUntil?: Date | null;
@@ -316,6 +317,7 @@ const opportunitySchema = new Schema<IOpportunity>(
 
     convertedAt: { type: Date, default: null },
     convertedBy: { type: String, trim: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
     holdReason: { type: String, enum: Object.values(HoldReason), default: null },
     holdUntil: { type: Date, default: null },

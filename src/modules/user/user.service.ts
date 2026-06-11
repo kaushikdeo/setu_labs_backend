@@ -1,7 +1,9 @@
 import bcrypt from 'bcryptjs';
+import { Types } from 'mongoose';
 import { logger } from '../../config/logger';
 import { IUser, UserModel, UserRole } from './user.model';
 import { AppError } from '../../utils/app-error';
+import { orgFilter } from '../../utils/tenant';
 
 const SALT_ROUNDS = 12;
 
@@ -18,6 +20,7 @@ export interface SafeUser {
   email: string;
   name: string;
   role: UserRole;
+  organizationId: string;
   customerId?: string;
   isActive: boolean;
   onboardingCompleted: boolean;
@@ -31,6 +34,7 @@ function toSafeUser(user: IUser): SafeUser {
     email: user.email,
     name: user.name,
     role: user.role,
+    organizationId: user.organizationId.toString(),
     customerId: user.customerId?.toString() ?? undefined,
     isActive: user.isActive,
     onboardingCompleted: user.onboardingCompleted,
@@ -40,20 +44,20 @@ function toSafeUser(user: IUser): SafeUser {
 }
 
 export class UserService {
-  async getUserById(id: string): Promise<SafeUser | null> {
+  async getUserById(id: string, organizationId: string): Promise<SafeUser | null> {
     logger.debug('Fetching user by ID', { id });
-    const user = await UserModel.findById(id);
+    const user = await UserModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!user) return null;
     return toSafeUser(user);
   }
 
-  async getAllUsers(): Promise<SafeUser[]> {
+  async getAllUsers(organizationId: string): Promise<SafeUser[]> {
     logger.debug('Fetching all users');
-    const users = await UserModel.find();
+    const users = await UserModel.find(orgFilter(organizationId));
     return users.map(toSafeUser);
   }
 
-  async createUser(data: CreateUserDto): Promise<SafeUser> {
+  async createUser(data: CreateUserDto, organizationId: string): Promise<SafeUser> {
     const existing = await UserModel.findOne({ email: data.email.toLowerCase() });
     if (existing) {
       throw new AppError(409, 'Email already registered');
@@ -70,7 +74,8 @@ export class UserService {
       name: data.name,
       passwordHash,
       role,
-      customerId: data.customerId ?? undefined,
+      ...orgFilter(organizationId),
+      customerId: data.customerId ? new Types.ObjectId(data.customerId) : undefined,
       onboardingCompleted: true,
     });
 
@@ -78,14 +83,26 @@ export class UserService {
     return toSafeUser(user);
   }
 
-  async updateRole(id: string, role: UserRole): Promise<SafeUser | null> {
-    const user = await UserModel.findByIdAndUpdate(id, { role }, { new: true });
+  async updateRole(id: string, role: UserRole, organizationId: string): Promise<SafeUser | null> {
+    const user = await UserModel.findOneAndUpdate(
+      { _id: id, ...orgFilter(organizationId) },
+      { role },
+      { new: true },
+    );
     if (!user) return null;
     return toSafeUser(user);
   }
 
-  async updateStatus(id: string, isActive: boolean): Promise<SafeUser | null> {
-    const user = await UserModel.findByIdAndUpdate(id, { isActive }, { new: true });
+  async updateStatus(
+    id: string,
+    isActive: boolean,
+    organizationId: string,
+  ): Promise<SafeUser | null> {
+    const user = await UserModel.findOneAndUpdate(
+      { _id: id, ...orgFilter(organizationId) },
+      { isActive },
+      { new: true },
+    );
     if (!user) return null;
     return toSafeUser(user);
   }

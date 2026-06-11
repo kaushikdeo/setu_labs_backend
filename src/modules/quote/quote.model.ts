@@ -135,6 +135,7 @@ export interface IQuote extends Document {
   supersededAt?: Date;
   supersededByQuoteId?: Types.ObjectId | null;
 
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdByName?: string;
   createdAt: Date;
@@ -273,6 +274,7 @@ const quoteSchema = new Schema<IQuote>(
     supersededAt: { type: Date },
     supersededByQuoteId: { type: Schema.Types.ObjectId, ref: 'Quote', default: null },
 
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
     createdByName: { type: String },
   },

@@ -23,6 +23,7 @@ export interface ISite extends Document {
   contactPhone?: string;
   contactEmail?: string;
   isActive: boolean;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -49,6 +50,7 @@ const siteSchema = new Schema<ISite>(
     contactPhone: { type: String, trim: true },
     contactEmail: { type: String, trim: true, lowercase: true },
     isActive: { type: Boolean, default: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

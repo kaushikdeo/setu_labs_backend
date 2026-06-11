@@ -6,6 +6,7 @@ import { VisitModel } from '../visit/visit.model';
 import { ReportModel, ReportStatus } from '../report/report.model';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
+import { orgFilter } from '../../utils/tenant';
 import { calculate as calcAirVelocity } from './calculations/air-velocity-acph-pao';
 import { calculate as calcParticleCount } from './calculations/particle-count';
 import { calculate as calcHepaFilter } from './calculations/hepa-filter-integrity';
@@ -47,25 +48,28 @@ function runCalculation(
   return calcFn(readings, thresholds, testType);
 }
 
-async function generateReportNumber(visitTaskId: string): Promise<string> {
-  const task = await VisitTaskModel.findById(visitTaskId).populate({
+async function generateReportNumber(visitTaskId: string, organizationId: string): Promise<string> {
+  const task = await VisitTaskModel.findOne({ _id: visitTaskId, ...orgFilter(organizationId) }).populate({
     path: 'visitId',
     populate: { path: 'customerId', model: 'Customer', select: 'code' },
   });
   if (!task) throw new AppError(404, 'Task not found');
 
-  const visit = await VisitModel.findById(task.visitId).populate('customerId');
+  const visit = await VisitModel.findOne({ _id: task.visitId, ...orgFilter(organizationId) }).populate('customerId');
   const customerCode = (visit as any)?.customerId?.code ?? 'UNK';
   const year = new Date().getFullYear();
-  const count = await TaskTestResultModel.countDocuments();
+  const count = await TaskTestResultModel.countDocuments(orgFilter(organizationId));
   const seq = String(count + 1).padStart(3, '0');
   return `SETU/${customerCode}/VAL/${year}/${seq}`;
 }
 
 export class TestResultService {
-  async getByTask(visitTaskId: string): Promise<any[]> {
+  async getByTask(visitTaskId: string, organizationId: string): Promise<any[]> {
+    const task = await VisitTaskModel.findOne({ _id: visitTaskId, ...orgFilter(organizationId) });
+    if (!task) throw new AppError(404, 'Task not found');
+
     return TaskTestResultModel.aggregate([
-      { $match: { visitTaskId: new Types.ObjectId(visitTaskId) } },
+      { $match: { visitTaskId: new Types.ObjectId(visitTaskId), ...orgFilter(organizationId) } },
       {
         $lookup: {
           from: 'testtypes',
@@ -129,9 +133,9 @@ export class TestResultService {
     ]);
   }
 
-  async getById(id: string): Promise<any> {
+  async getById(id: string, organizationId: string): Promise<any> {
     const results = await TaskTestResultModel.aggregate([
-      { $match: { _id: new Types.ObjectId(id) } },
+      { $match: { _id: new Types.ObjectId(id), ...orgFilter(organizationId) } },
       {
         $lookup: {
           from: 'testtypes',
@@ -218,11 +222,12 @@ export class TestResultService {
       readings: Record<string, any>;
     },
     userId: string,
+    organizationId: string,
   ): Promise<ITaskTestResult> {
-    const task = await VisitTaskModel.findById(visitTaskId);
+    const task = await VisitTaskModel.findOne({ _id: visitTaskId, ...orgFilter(organizationId) });
     if (!task) throw new AppError(404, 'Task not found');
 
-    const testType = await TestTypeModel.findById(data.testTypeId);
+    const testType = await TestTypeModel.findOne({ _id: data.testTypeId, ...orgFilter(organizationId) });
     if (!testType) throw new AppError(404, 'Test type not found');
 
     const calcFn = calcRegistry[testType.calculationKey];
@@ -235,7 +240,7 @@ export class TestResultService {
       testType,
     );
 
-    const reportNumber = await generateReportNumber(visitTaskId);
+    const reportNumber = await generateReportNumber(visitTaskId, organizationId);
 
     const testResult = await TaskTestResultModel.create({
       visitTaskId,
@@ -250,12 +255,12 @@ export class TestResultService {
       calculatedValues,
       result,
       conclusion,
+      ...orgFilter(organizationId),
       createdBy: userId,
       completedAt: new Date(),
     });
 
-    // Mark matching plannedTest as completed (use string comparison for type safety)
-    const taskDoc = await VisitTaskModel.findById(visitTaskId);
+    const taskDoc = await VisitTaskModel.findOne({ _id: visitTaskId, ...orgFilter(organizationId) });
     if (taskDoc) {
       const pt = taskDoc.plannedTests.find(
         (p) => p.testTypeId.toString() === data.testTypeId,
@@ -280,14 +285,15 @@ export class TestResultService {
       readings: Record<string, any>;
     },
     userId: string,
+    organizationId: string,
   ): Promise<ITaskTestResult> {
-    const existing = await TaskTestResultModel.findById(resultId);
+    const existing = await TaskTestResultModel.findOne({ _id: resultId, ...orgFilter(organizationId) });
     if (!existing) throw new AppError(404, 'Test result not found');
 
-    const task = await VisitTaskModel.findById(existing.visitTaskId);
+    const task = await VisitTaskModel.findOne({ _id: existing.visitTaskId, ...orgFilter(organizationId) });
     if (!task) throw new AppError(404, 'Task not found');
 
-    const report = await ReportModel.findOne({ visitId: task.visitId });
+    const report = await ReportModel.findOne({ visitId: task.visitId, ...orgFilter(organizationId) });
     if (report && report.status === ReportStatus.APPROVED) {
       throw new AppError(
         409,
@@ -295,7 +301,7 @@ export class TestResultService {
       );
     }
 
-    const testType = await TestTypeModel.findById(existing.testTypeId);
+    const testType = await TestTypeModel.findOne({ _id: existing.testTypeId, ...orgFilter(organizationId) });
     if (!testType) throw new AppError(404, 'Test type not found');
 
     const calcFn = calcRegistry[testType.calculationKey];
@@ -308,8 +314,8 @@ export class TestResultService {
       testType,
     );
 
-    const updated = await TaskTestResultModel.findByIdAndUpdate(
-      resultId,
+    const updated = await TaskTestResultModel.findOneAndUpdate(
+      { _id: resultId, ...orgFilter(organizationId) },
       {
         readings: data.readings,
         testPerformedBy: data.testPerformedBy,
@@ -327,11 +333,11 @@ export class TestResultService {
     return updated!;
   }
 
-  async recalculate(resultId: string, userId: string): Promise<ITaskTestResult> {
-    const existing = await TaskTestResultModel.findById(resultId);
+  async recalculate(resultId: string, userId: string, organizationId: string): Promise<ITaskTestResult> {
+    const existing = await TaskTestResultModel.findOne({ _id: resultId, ...orgFilter(organizationId) });
     if (!existing) throw new AppError(404, 'Test result not found');
 
-    const testType = await TestTypeModel.findById(existing.testTypeId);
+    const testType = await TestTypeModel.findOne({ _id: existing.testTypeId, ...orgFilter(organizationId) });
     if (!testType) throw new AppError(404, 'Test type not found');
 
     const calcFn = calcRegistry[testType.calculationKey];
@@ -344,8 +350,8 @@ export class TestResultService {
       testType,
     );
 
-    const updated = await TaskTestResultModel.findByIdAndUpdate(
-      resultId,
+    const updated = await TaskTestResultModel.findOneAndUpdate(
+      { _id: resultId, ...orgFilter(organizationId) },
       { calculatedValues, result, conclusion },
       { new: true },
     );

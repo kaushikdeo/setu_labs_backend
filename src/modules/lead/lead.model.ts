@@ -105,6 +105,7 @@ export interface ILead extends Document {
   priority: LeadPriority;
   notes?: string;
   status: LeadStatus;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   lastActivityAt: Date;
   convertedAt?: Date | null;
@@ -148,6 +149,7 @@ const leadSchema = new Schema<ILead>(
     priority: { type: String, enum: Object.values(LeadPriority), default: LeadPriority.NORMAL },
     notes: { type: String, trim: true },
     status: { type: String, enum: Object.values(LeadStatus), default: LeadStatus.NEW },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
     lastActivityAt: { type: Date, default: () => new Date() },
     convertedAt: { type: Date, default: null },

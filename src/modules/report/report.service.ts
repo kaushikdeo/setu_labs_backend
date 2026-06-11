@@ -7,16 +7,17 @@ import { CustomerModel } from '../customer/customer.model';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
 import { UserRole } from '../user/user.model';
+import { orgFilter } from '../../utils/tenant';
 
 export class ReportService {
-  async createReport(visitId: string, userId: string): Promise<IReport> {
-    const visit = await VisitModel.findById(visitId);
+  async createReport(visitId: string, userId: string, organizationId: string): Promise<IReport> {
+    const visit = await VisitModel.findOne({ _id: visitId, ...orgFilter(organizationId) });
     if (!visit) throw new AppError(404, 'Visit not found');
     if (visit.status !== VisitStatus.COMPLETED) {
       throw new AppError(400, 'Report can only be created for completed visits');
     }
 
-    const existing = await ReportModel.findOne({ visitId: new Types.ObjectId(visitId) });
+    const existing = await ReportModel.findOne({ visitId: new Types.ObjectId(visitId), ...orgFilter(organizationId) });
     if (existing) throw new AppError(409, 'A report already exists for this visit');
 
     const report = await ReportModel.create({
@@ -24,6 +25,7 @@ export class ReportService {
       customerId: visit.customerId,
       title: `Report - ${visit.srNumber ?? visit.code}`,
       status: ReportStatus.DRAFT,
+      ...orgFilter(organizationId),
       createdBy: userId,
       approvalHistory: [],
     });
@@ -35,10 +37,11 @@ export class ReportService {
   async getAllReports(
     callerRole: UserRole,
     _callerUserId: string,
+    organizationId: string,
     callerCustomerId?: string,
     filters: any = {},
   ): Promise<any[]> {
-    const matchStage: any = {};
+    const matchStage: any = { ...orgFilter(organizationId) };
 
     if (callerRole === UserRole.CUSTOMER) {
       if (!callerCustomerId) throw new AppError(403, 'Customer account not linked to a customer record');
@@ -106,9 +109,10 @@ export class ReportService {
   async getReportById(
     id: string,
     callerRole: UserRole,
+    organizationId: string,
     callerCustomerId?: string,
   ): Promise<any> {
-    const report = await ReportModel.findById(id).lean();
+    const report = await ReportModel.findOne({ _id: id, ...orgFilter(organizationId) }).lean();
     if (!report) throw new AppError(404, 'Report not found');
 
     if (callerRole === UserRole.CUSTOMER) {
@@ -118,15 +122,15 @@ export class ReportService {
     }
 
     const [visit, customer, tasks] = await Promise.all([
-      VisitModel.findById(report.visitId).lean(),
-      CustomerModel.findById(report.customerId).lean(),
-      VisitTaskModel.find({ visitId: report.visitId })
+      VisitModel.findOne({ _id: report.visitId, ...orgFilter(organizationId) }).lean(),
+      CustomerModel.findOne({ _id: report.customerId, ...orgFilter(organizationId) }).lean(),
+      VisitTaskModel.find({ visitId: report.visitId, ...orgFilter(organizationId) })
         .populate('equipmentId', 'name code serialNumber')
         .lean(),
     ]);
 
     const taskIds = tasks.map((t) => t._id);
-    const testResults = await TaskTestResultModel.find({ visitTaskId: { $in: taskIds } }).lean();
+    const testResults = await TaskTestResultModel.find({ visitTaskId: { $in: taskIds }, ...orgFilter(organizationId) }).lean();
 
     const resultsByTask = new Map<string, typeof testResults>();
     for (const r of testResults) {
@@ -188,13 +192,13 @@ export class ReportService {
     };
   }
 
-  async submitForApproval(id: string, userId: string, comment?: string): Promise<IReport> {
+  async submitForApproval(id: string, userId: string, organizationId: string, comment?: string): Promise<IReport> {
     const submittableStatuses = [
       ReportStatus.DRAFT,
       ReportStatus.REJECTED,
       ReportStatus.CHANGES_REQUESTED,
     ];
-    const current = await ReportModel.findById(id).select('status');
+    const current = await ReportModel.findOne({ _id: id, ...orgFilter(organizationId) }).select('status');
     if (!current) throw new AppError(404, 'Report not found');
     if (!submittableStatuses.includes(current.status)) {
       throw new AppError(400, 'Only draft, rejected, or changes_requested reports can be submitted for approval');
@@ -204,7 +208,7 @@ export class ReportService {
     const action = current.status === ReportStatus.DRAFT ? 'submitted' : 'resubmitted';
 
     const report = await ReportModel.findOneAndUpdate(
-      { _id: new Types.ObjectId(id), status: { $in: submittableStatuses } },
+      { _id: new Types.ObjectId(id), ...orgFilter(organizationId), status: { $in: submittableStatuses } },
       {
         $set: {
           status: ReportStatus.PENDING_APPROVAL,
@@ -224,9 +228,10 @@ export class ReportService {
   private async assertPendingDecision(
     id: string,
     callerCustomerId: string,
+    organizationId: string,
     notPendingMessage: string,
   ): Promise<never> {
-    const existing = await ReportModel.findById(id).select('customerId status');
+    const existing = await ReportModel.findOne({ _id: id, ...orgFilter(organizationId) }).select('customerId status');
     if (!existing) throw new AppError(404, 'Report not found');
     if (existing.customerId.toString() !== callerCustomerId) throw new AppError(403, 'Access denied');
     throw new AppError(400, notPendingMessage);
@@ -236,12 +241,14 @@ export class ReportService {
     id: string,
     userId: string,
     callerCustomerId: string,
+    organizationId: string,
     comment?: string,
   ): Promise<IReport> {
     const now = new Date();
     const report = await ReportModel.findOneAndUpdate(
       {
         _id: new Types.ObjectId(id),
+        ...orgFilter(organizationId),
         customerId: new Types.ObjectId(callerCustomerId),
         status: ReportStatus.PENDING_APPROVAL,
       },
@@ -252,7 +259,7 @@ export class ReportService {
       { new: true },
     );
     if (!report) {
-      await this.assertPendingDecision(id, callerCustomerId, 'Only pending_approval reports can be approved');
+      await this.assertPendingDecision(id, callerCustomerId, organizationId, 'Only pending_approval reports can be approved');
     }
 
     logger.info('Report approved', { reportId: id, approvedBy: userId });
@@ -263,12 +270,14 @@ export class ReportService {
     id: string,
     userId: string,
     callerCustomerId: string,
+    organizationId: string,
     comment: string,
   ): Promise<IReport> {
     const now = new Date();
     const report = await ReportModel.findOneAndUpdate(
       {
         _id: new Types.ObjectId(id),
+        ...orgFilter(organizationId),
         customerId: new Types.ObjectId(callerCustomerId),
         status: ReportStatus.PENDING_APPROVAL,
       },
@@ -279,7 +288,7 @@ export class ReportService {
       { new: true },
     );
     if (!report) {
-      await this.assertPendingDecision(id, callerCustomerId, 'Only pending_approval reports can be rejected');
+      await this.assertPendingDecision(id, callerCustomerId, organizationId, 'Only pending_approval reports can be rejected');
     }
 
     logger.info('Report rejected', { reportId: id, rejectedBy: userId });
@@ -290,10 +299,11 @@ export class ReportService {
     id: string,
     userId: string,
     callerRole: UserRole,
+    organizationId: string,
     callerCustomerId: string | undefined,
     comment: string,
   ): Promise<IReport> {
-    const report = await ReportModel.findById(id);
+    const report = await ReportModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!report) throw new AppError(404, 'Report not found');
     if (callerRole === UserRole.CUSTOMER) {
       if (!callerCustomerId || report.customerId.toString() !== callerCustomerId) {
@@ -321,16 +331,17 @@ export class ReportService {
     return report;
   }
 
-  async getReportByVisitId(visitId: string): Promise<IReport | null> {
-    return ReportModel.findOne({ visitId: new Types.ObjectId(visitId) });
+  async getReportByVisitId(visitId: string, organizationId: string): Promise<IReport | null> {
+    return ReportModel.findOne({ visitId: new Types.ObjectId(visitId), ...orgFilter(organizationId) });
   }
 
   async getAllResultsForDownload(
     reportId: string,
     callerRole: UserRole,
+    organizationId: string,
     callerCustomerId?: string,
   ): Promise<any[]> {
-    const report = await ReportModel.findById(reportId).lean();
+    const report = await ReportModel.findOne({ _id: reportId, ...orgFilter(organizationId) }).lean();
     if (!report) throw new AppError(404, 'Report not found');
 
     if (callerRole === UserRole.CUSTOMER) {
@@ -339,11 +350,11 @@ export class ReportService {
       }
     }
 
-    const tasks = await VisitTaskModel.find({ visitId: report.visitId }).select('_id').lean();
+    const tasks = await VisitTaskModel.find({ visitId: report.visitId, ...orgFilter(organizationId) }).select('_id').lean();
     const taskIds = tasks.map((t) => t._id);
 
     const results = await TaskTestResultModel.aggregate([
-      { $match: { visitTaskId: { $in: taskIds } } },
+      { $match: { visitTaskId: { $in: taskIds }, ...orgFilter(organizationId) } },
       { $lookup: { from: 'testtypes', localField: 'testTypeId', foreignField: '_id', as: 'testType' } },
       {
         $lookup: {
@@ -403,9 +414,10 @@ export class ReportService {
     reportId: string,
     resultId: string,
     callerRole: UserRole,
+    organizationId: string,
     callerCustomerId?: string,
   ): Promise<any> {
-    const report = await ReportModel.findById(reportId).lean();
+    const report = await ReportModel.findOne({ _id: reportId, ...orgFilter(organizationId) }).lean();
     if (!report) throw new AppError(404, 'Report not found');
 
     if (callerRole === UserRole.CUSTOMER) {
@@ -414,18 +426,16 @@ export class ReportService {
       }
     }
 
-    // Verify ownership: the result's task must belong to this report's visit
-    const ownerCheck = await TaskTestResultModel.findById(resultId).select('visitTaskId').lean();
+    const ownerCheck = await TaskTestResultModel.findOne({ _id: resultId, ...orgFilter(organizationId) }).select('visitTaskId').lean();
     if (!ownerCheck) throw new AppError(404, 'Test result not found');
 
-    const task = await VisitTaskModel.findById(ownerCheck.visitTaskId).select('visitId').lean();
+    const task = await VisitTaskModel.findOne({ _id: ownerCheck.visitTaskId, ...orgFilter(organizationId) }).select('visitId').lean();
     if (!task || task.visitId.toString() !== report.visitId.toString()) {
       throw new AppError(403, 'Test result does not belong to this report');
     }
 
-    // Use the same aggregation pipeline as TestResultService.getById for identical response shape
     const results = await TaskTestResultModel.aggregate([
-      { $match: { _id: new Types.ObjectId(resultId) } },
+      { $match: { _id: new Types.ObjectId(resultId), ...orgFilter(organizationId) } },
       { $lookup: { from: 'testtypes', localField: 'testTypeId', foreignField: '_id', as: 'testType' } },
       {
         $lookup: {

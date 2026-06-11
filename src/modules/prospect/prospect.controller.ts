@@ -21,16 +21,20 @@ function parseFilters(query: Request['query']): ListProspectsFilters {
 export class ProspectController {
   list = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await prospectService.list(parseFilters(req.query), req.user!.id);
+      const result = await prospectService.list(
+        parseFilters(req.query),
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data: result });
     } catch (err) {
       next(err);
     }
   };
 
-  stats = async (_req: Request, res: Response, next: NextFunction) => {
+  stats = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.stats();
+      const data = await prospectService.stats(req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -39,7 +43,11 @@ export class ProspectController {
 
   kanban = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.kanban(parseFilters(req.query), req.user!.id);
+      const data = await prospectService.kanban(
+        parseFilters(req.query),
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -48,7 +56,7 @@ export class ProspectController {
 
   forecast = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.forecast(req.user!.id);
+      const data = await prospectService.forecast(req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -57,7 +65,7 @@ export class ProspectController {
 
   followUps = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.followUps(req.user!.id);
+      const data = await prospectService.followUps(req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -66,7 +74,7 @@ export class ProspectController {
 
   getById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.getById(req.params.id);
+      const data = await prospectService.getById(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -75,7 +83,7 @@ export class ProspectController {
 
   getByLeadId = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.findByLeadId(req.params.leadId);
+      const data = await prospectService.findByLeadId(req.params.leadId, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -84,7 +92,12 @@ export class ProspectController {
 
   convert = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const prospect = await prospectService.convertLead(req.params.leadId, req.body, req.user!.id);
+      const prospect = await prospectService.convertLead(
+        req.params.leadId,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(201).json({ success: true, data: prospect });
     } catch (err) {
       next(err);
@@ -93,7 +106,12 @@ export class ProspectController {
 
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.update(req.params.id, req.body, req.user!.id);
+      const data = await prospectService.update(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -102,7 +120,12 @@ export class ProspectController {
 
   changeStage = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.changeStage(req.params.id, req.body, req.user!.id);
+      const data = await prospectService.changeStage(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -111,7 +134,12 @@ export class ProspectController {
 
   markWon = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.markWon(req.params.id, req.body, req.user!.id);
+      const data = await prospectService.markWon(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -120,7 +148,12 @@ export class ProspectController {
 
   markLost = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.markLost(req.params.id, req.body, req.user!.id);
+      const data = await prospectService.markLost(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -129,7 +162,12 @@ export class ProspectController {
 
   putOnHold = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.putOnHold(req.params.id, req.body, req.user!.id);
+      const data = await prospectService.putOnHold(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -138,7 +176,12 @@ export class ProspectController {
 
   resume = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.resume(req.params.id, req.body, req.user!.id);
+      const data = await prospectService.resume(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -147,7 +190,12 @@ export class ProspectController {
 
   snooze = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.snooze(req.params.id, req.body, req.user!.id);
+      const data = await prospectService.snooze(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -156,7 +204,7 @@ export class ProspectController {
 
   remove = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await prospectService.remove(req.params.id, req.user!.id);
+      await prospectService.remove(req.params.id, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, message: 'Prospect deleted' });
     } catch (err) {
       next(err);
@@ -165,7 +213,7 @@ export class ProspectController {
 
   clearFollowUp = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await prospectService.clearFollowUp(req.params.id);
+      const data = await prospectService.clearFollowUp(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -178,6 +226,7 @@ export class ProspectController {
         req.params.id,
         req.body,
         req.user!.id,
+        req.user!.organizationId!,
       );
       res.status(200).json({ success: true, data });
     } catch (err) {
@@ -189,7 +238,12 @@ export class ProspectController {
     try {
       const days = req.query.days ? Number(req.query.days) : 30;
       const scope = (req.query.scope as 'mine' | 'all' | undefined) ?? 'all';
-      const data = await prospectService.listCompletedFollowUps(days, req.user!.id, scope);
+      const data = await prospectService.listCompletedFollowUps(
+        days,
+        req.user!.id,
+        req.user!.organizationId!,
+        scope,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);

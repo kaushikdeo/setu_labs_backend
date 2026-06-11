@@ -16,7 +16,12 @@ export class FollowUpController {
     try {
       const entityType = ((req.query.entityType as string) ?? 'all') as FollowUpEntityFilter;
       const scope = (req.query.scope as 'mine' | 'all' | undefined) ?? 'all';
-      const data = await followUpService.listOpen(entityType, req.user!.id, scope);
+      const data = await followUpService.listOpen(
+        entityType,
+        req.user!.id,
+        req.user!.organizationId!,
+        scope,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -28,7 +33,13 @@ export class FollowUpController {
       const entityType = ((req.query.entityType as string) ?? 'all') as FollowUpEntityFilter;
       const days = req.query.days ? Number(req.query.days) : 30;
       const scope = (req.query.scope as 'mine' | 'all' | undefined) ?? 'all';
-      const data = await followUpService.listCompleted(entityType, days, req.user!.id, scope);
+      const data = await followUpService.listCompleted(
+        entityType,
+        days,
+        req.user!.id,
+        req.user!.organizationId!,
+        scope,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -44,6 +55,7 @@ export class FollowUpController {
         req.params.id,
         { ...req.body, doneAs },
         req.user!.id,
+        req.user!.organizationId!,
       );
       res.status(200).json({ success: true, data });
     } catch (err) {
@@ -54,7 +66,11 @@ export class FollowUpController {
   clear = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const entityType = req.params.entityType as FollowUpEntityType;
-      const data = await followUpService.clearFollowUp(entityType, req.params.id);
+      const data = await followUpService.clearFollowUp(
+        entityType,
+        req.params.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);

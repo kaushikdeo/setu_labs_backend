@@ -28,6 +28,7 @@ export interface IVisitTask extends Document {
   remarks?: string;
   status: TaskStatus;
   completedAt?: Date;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -60,6 +61,7 @@ const visitTaskSchema = new Schema<IVisitTask>(
       default: TaskStatus.PENDING,
     },
     completedAt: { type: Date },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

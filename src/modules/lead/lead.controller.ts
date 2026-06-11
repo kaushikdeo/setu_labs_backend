@@ -29,7 +29,7 @@ export class LeadController {
   list = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const filters = parseFilters(req.query);
-      const result = await leadService.list(filters, req.user!.id);
+      const result = await leadService.list(filters, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -38,16 +38,16 @@ export class LeadController {
 
   getById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const lead = await leadService.getById(req.params.id);
+      const lead = await leadService.getById(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: lead });
     } catch (error) {
       next(error);
     }
   };
 
-  stats = async (_req: Request, res: Response, next: NextFunction) => {
+  stats = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const stats = await leadService.stats();
+      const stats = await leadService.stats(req.user!.organizationId!);
       res.status(200).json({ success: true, data: stats });
     } catch (error) {
       next(error);
@@ -56,7 +56,7 @@ export class LeadController {
 
   create = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const lead = await leadService.create(req.body, req.user!.id);
+      const lead = await leadService.create(req.body, req.user!.id, req.user!.organizationId!);
       res.status(201).json({ success: true, data: lead });
     } catch (error) {
       next(error);
@@ -65,7 +65,12 @@ export class LeadController {
 
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const lead = await leadService.update(req.params.id, req.body, req.user!.id);
+      const lead = await leadService.update(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data: lead });
     } catch (error) {
       next(error);
@@ -74,7 +79,7 @@ export class LeadController {
 
   remove = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await leadService.remove(req.params.id, req.user!.id);
+      await leadService.remove(req.params.id, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, message: 'Lead deleted' });
     } catch (error) {
       next(error);
@@ -83,7 +88,7 @@ export class LeadController {
 
   listSegments = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const segments = await leadService.listSegments(req.user!.id);
+      const segments = await leadService.listSegments(req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: segments });
     } catch (error) {
       next(error);
@@ -92,7 +97,7 @@ export class LeadController {
 
   createSegment = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const segment = await leadService.createSegment(req.body, req.user!.id);
+      const segment = await leadService.createSegment(req.body, req.user!.id, req.user!.organizationId!);
       res.status(201).json({ success: true, data: segment });
     } catch (error) {
       next(error);
@@ -101,7 +106,12 @@ export class LeadController {
 
   updateSegment = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const segment = await leadService.updateSegment(req.params.id, req.body, req.user!.id);
+      const segment = await leadService.updateSegment(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data: segment });
     } catch (error) {
       next(error);
@@ -110,7 +120,7 @@ export class LeadController {
 
   removeSegment = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await leadService.removeSegment(req.params.id, req.user!.id);
+      await leadService.removeSegment(req.params.id, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, message: 'Segment deleted' });
     } catch (error) {
       next(error);
@@ -146,7 +156,11 @@ export class LeadController {
         res.status(400).json({ success: false, message: error.details[0]?.message ?? 'Invalid defaults' });
         return;
       }
-      const result = await leadImportService.validate(req.file.buffer, defaults);
+      const result = await leadImportService.validate(
+        req.file.buffer,
+        defaults,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -155,7 +169,11 @@ export class LeadController {
 
   commitImport = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await leadImportService.commit(req.body.importId, req.user!.id);
+      const result = await leadImportService.commit(
+        req.body.importId,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(201).json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -164,7 +182,7 @@ export class LeadController {
 
   clearFollowUp = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await followUpService.clearFollowUp('lead', req.params.id);
+      const data = await followUpService.clearFollowUp('lead', req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (error) {
       next(error);
@@ -173,7 +191,12 @@ export class LeadController {
 
   putOnHold = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await leadService.putOnHold(req.params.id, req.body, req.user!.id);
+      const data = await leadService.putOnHold(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (error) {
       next(error);
@@ -182,7 +205,12 @@ export class LeadController {
 
   resume = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await leadService.resume(req.params.id, req.body, req.user!.id);
+      const data = await leadService.resume(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (error) {
       next(error);
@@ -191,7 +219,12 @@ export class LeadController {
 
   snooze = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await leadService.snooze(req.params.id, req.body, req.user!.id);
+      const data = await leadService.snooze(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (error) {
       next(error);
@@ -214,6 +247,7 @@ export class LeadController {
         req.params.id,
         { ...req.body, doneAs },
         req.user!.id,
+        req.user!.organizationId!,
       );
       res.status(200).json({ success: true, data });
     } catch (error) {

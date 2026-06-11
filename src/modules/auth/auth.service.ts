@@ -5,6 +5,8 @@ import { logger } from '../../config/logger';
 import { UserModel, UserRole } from '../user/user.model';
 import { SafeUser } from '../user/user.service';
 import { AppError } from '../../utils/app-error';
+import { createStubOrganization } from '../../utils/org-provisioning';
+import { OrganizationModel } from '../organization/organization.model';
 
 const SALT_ROUNDS = 12;
 
@@ -17,7 +19,6 @@ interface AuthResult {
   user: SafeUser;
   accessToken: string;
   refreshToken: string;
-  isFirstUser?: boolean;
 }
 
 function toSafeUser(user: InstanceType<typeof UserModel>): SafeUser {
@@ -26,7 +27,8 @@ function toSafeUser(user: InstanceType<typeof UserModel>): SafeUser {
     email: user.email,
     name: user.name,
     role: user.role,
-    customerId: (user as any).customerId?.toString() ?? undefined,
+    organizationId: user.organizationId!.toString(),
+    customerId: user.customerId?.toString() ?? undefined,
     isActive: user.isActive,
     onboardingCompleted: user.onboardingCompleted,
     lastLoginAt: user.lastLoginAt,
@@ -34,8 +36,14 @@ function toSafeUser(user: InstanceType<typeof UserModel>): SafeUser {
   };
 }
 
-function signTokenPair(userId: string, email: string, role: UserRole, customerId?: string): TokenPair {
-  const payload: Record<string, unknown> = { sub: userId, email, role };
+function signTokenPair(
+  userId: string,
+  email: string,
+  role: UserRole,
+  organizationId: string,
+  customerId?: string,
+): TokenPair {
+  const payload: Record<string, unknown> = { sub: userId, email, role, organizationId };
   if (customerId) payload.customerId = customerId;
 
   const accessToken = jwt.sign(payload, env.jwtSecret, {
@@ -51,34 +59,48 @@ function signTokenPair(userId: string, email: string, role: UserRole, customerId
 
 export class AuthService {
   async register(data: { email: string; password: string; name: string }): Promise<AuthResult> {
+    if (!env.registrationEnabled) {
+      throw new AppError(403, 'Registration is disabled');
+    }
+
     const existing = await UserModel.findOne({ email: data.email.toLowerCase() });
     if (existing) {
       throw new AppError(409, 'Email already registered');
     }
 
     const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
-    const userCount = await UserModel.countDocuments();
-    const role = userCount === 0 ? UserRole.SUPER_ADMIN : UserRole.VALIDATION_ENGINEER;
+    const email = data.email.toLowerCase();
+    const organization = await createStubOrganization(
+      { name: data.name, email },
+      email,
+    );
 
     const user = await UserModel.create({
-      email: data.email.toLowerCase(),
+      email,
       name: data.name,
       passwordHash,
-      role,
+      role: UserRole.SUPER_ADMIN,
+      organizationId: organization._id,
+      onboardingCompleted: false,
+    });
+
+    await OrganizationModel.findByIdAndUpdate(organization._id, {
+      createdBy: user._id.toString(),
     });
 
     const { accessToken, refreshToken } = signTokenPair(
       user._id.toString(),
       user.email,
       user.role,
+      organization._id.toString(),
     );
 
     user.refreshTokenHash = await bcrypt.hash(refreshToken, SALT_ROUNDS);
     user.lastLoginAt = new Date();
     await user.save();
 
-    logger.info('User registered', { userId: user._id });
-    return { user: toSafeUser(user), accessToken, refreshToken, isFirstUser: userCount === 0 };
+    logger.info('User registered', { userId: user._id, organizationId: organization._id });
+    return { user: toSafeUser(user), accessToken, refreshToken };
   }
 
   async login(data: { email: string; password: string }): Promise<AuthResult> {
@@ -88,17 +110,22 @@ export class AuthService {
       throw new AppError(401, 'Invalid credentials');
     }
 
+    if (!user.organizationId) {
+      throw new AppError(403, 'User is not assigned to an organization');
+    }
+
     const passwordMatch = await bcrypt.compare(data.password, user.passwordHash);
     if (!passwordMatch) {
       logger.warn('Login failed — invalid password', { email: data.email });
       throw new AppError(401, 'Invalid credentials');
     }
 
-    const customerId = (user as any).customerId?.toString();
+    const customerId = user.customerId?.toString();
     const { accessToken, refreshToken } = signTokenPair(
       user._id.toString(),
       user.email,
       user.role,
+      user.organizationId.toString(),
       customerId,
     );
 
@@ -119,7 +146,7 @@ export class AuthService {
     }
 
     const user = await UserModel.findById(payload.sub);
-    if (!user || !user.isActive || !user.refreshTokenHash) {
+    if (!user || !user.isActive || !user.refreshTokenHash || !user.organizationId) {
       throw new AppError(401, 'Invalid or expired refresh token');
     }
 
@@ -128,11 +155,12 @@ export class AuthService {
       throw new AppError(401, 'Invalid or expired refresh token');
     }
 
-    const customerId = (user as any).customerId?.toString();
+    const customerId = user.customerId?.toString();
     const { accessToken, refreshToken } = signTokenPair(
       user._id.toString(),
       user.email,
       user.role,
+      user.organizationId.toString(),
       customerId,
     );
 

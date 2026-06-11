@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 import { IndustryType } from '../organization/organization.model';
 
 export enum CustomerStatus {
@@ -41,6 +41,7 @@ export interface ICustomer extends Document {
   gstin?: string;
   notes?: string;
   reportSettings?: ICustomerReportSettings;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -69,6 +70,7 @@ const customerSchema = new Schema<ICustomer>(
     gstin: { type: String, trim: true },
     notes: { type: String, trim: true },
     reportSettings: { type: Schema.Types.Mixed, default: {} },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

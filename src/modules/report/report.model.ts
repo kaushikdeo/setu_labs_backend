@@ -27,6 +27,7 @@ export interface IReport extends Document {
   approvedAt?: Date;
   approvedBy?: string;
   approvalHistory: IApprovalHistoryEntry[];
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -57,6 +58,7 @@ const reportSchema = new Schema<IReport>(
     approvedAt: { type: Date },
     approvedBy: { type: String },
     approvalHistory: { type: [approvalHistorySchema], default: [] },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

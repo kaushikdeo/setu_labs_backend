@@ -5,11 +5,9 @@ import { auditService } from '../audit/audit.service';
 const customerService = new CustomerService();
 
 export class CustomerController {
-  // ─── Customer Handlers ─────────────────────────────────────────────────────
-
   createCustomer = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const customer = await customerService.createCustomer(req.body, req.user!.id);
+      const customer = await customerService.createCustomer(req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('customer.create', req, req.user!.id, {
         customerId: customer._id,
         name: customer.name,
@@ -20,9 +18,9 @@ export class CustomerController {
     }
   };
 
-  getAllCustomers = async (_req: Request, res: Response, next: NextFunction) => {
+  getAllCustomers = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const customers = await customerService.getAllCustomers();
+      const customers = await customerService.getAllCustomers(req.user!.organizationId!);
       res.status(200).json({ success: true, data: customers });
     } catch (error) {
       next(error);
@@ -31,7 +29,7 @@ export class CustomerController {
 
   getCustomerById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const customer = await customerService.getCustomerById(req.params.id);
+      const customer = await customerService.getCustomerById(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: customer });
     } catch (error) {
       next(error);
@@ -40,7 +38,7 @@ export class CustomerController {
 
   updateCustomer = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const customer = await customerService.updateCustomer(req.params.id, req.body, req.user!.id);
+      const customer = await customerService.updateCustomer(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('customer.update', req, req.user!.id, {
         customerId: customer._id,
         updatedFields: Object.keys(req.body),
@@ -51,11 +49,9 @@ export class CustomerController {
     }
   };
 
-  // ─── Site Handlers ─────────────────────────────────────────────────────────
-
   createSite = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const site = await customerService.createSite(req.params.id, req.body, req.user!.id);
+      const site = await customerService.createSite(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('site.create', req, req.user!.id, {
         siteId: site._id,
         customerId: req.params.id,
@@ -69,7 +65,7 @@ export class CustomerController {
 
   getSitesByCustomer = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const sites = await customerService.getSitesByCustomer(req.params.id);
+      const sites = await customerService.getSitesByCustomer(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: sites });
     } catch (error) {
       next(error);
@@ -78,7 +74,7 @@ export class CustomerController {
 
   updateSite = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const site = await customerService.updateSite(req.params.siteId, req.body, req.user!.id);
+      const site = await customerService.updateSite(req.params.siteId, req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('site.update', req, req.user!.id, {
         siteId: site._id,
         updatedFields: Object.keys(req.body),
@@ -91,7 +87,7 @@ export class CustomerController {
 
   deleteSite = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await customerService.deleteSite(req.params.siteId, req.user!.id);
+      await customerService.deleteSite(req.params.siteId, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('site.deactivate', req, req.user!.id, {
         siteId: req.params.siteId,
       });

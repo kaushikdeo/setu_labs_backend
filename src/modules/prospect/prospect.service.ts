@@ -21,6 +21,7 @@ import { ActivityType } from '../activity/activity.model';
 import { followUpService } from '../follow-up/follow-up.service';
 import { srCounterService } from '../sr-counter/sr-counter.service';
 import { AppError } from '../../utils/app-error';
+import { orgFilter } from '../../utils/tenant';
 import { logger } from '../../config/logger';
 import { computeHealth, staleCutoffFor } from '../crm-health/compute-health';
 import { enrichWithHealth } from '../crm-health/enrich-health';
@@ -249,8 +250,12 @@ export interface MarkLostDto {
 }
 
 export class ProspectService {
-  private buildMatch(filters: ListProspectsFilters, callerUserId: string): Record<string, unknown> {
-    const match: Record<string, unknown> = {};
+  private buildMatch(
+    filters: ListProspectsFilters,
+    callerUserId: string,
+    organizationId: string,
+  ): Record<string, unknown> {
+    const match: Record<string, unknown> = { ...orgFilter(organizationId) };
 
     if (filters.scope === 'mine') {
       match.assignedUserId = new Types.ObjectId(callerUserId);
@@ -294,8 +299,8 @@ export class ProspectService {
     return match;
   }
 
-  async list(filters: ListProspectsFilters, callerUserId: string) {
-    const match = this.buildMatch(filters, callerUserId);
+  async list(filters: ListProspectsFilters, callerUserId: string, organizationId: string) {
+    const match = this.buildMatch(filters, callerUserId, organizationId);
     const page = Math.max(1, filters.page ?? 1);
     const limit = Math.max(1, Math.min(MAX_PAGE_SIZE, filters.limit ?? DEFAULT_PAGE_SIZE));
     const skip = (page - 1) * limit;
@@ -333,10 +338,10 @@ export class ProspectService {
     return { data, page, limit, total };
   }
 
-  async getById(id: string): Promise<unknown> {
+  async getById(id: string, organizationId: string): Promise<unknown> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
     const [doc] = await ProspectModel.aggregate([
-      { $match: { _id: new Types.ObjectId(id) } },
+      { $match: { _id: new Types.ObjectId(id), ...orgFilter(organizationId) } },
       ...ENRICH_STAGES,
       { $project: PROJECT_PROSPECT },
     ]);
@@ -344,17 +349,18 @@ export class ProspectService {
     return enrichWithHealth(doc as Record<string, unknown>, 'prospect');
   }
 
-  async findByLeadId(leadId: string): Promise<unknown | null> {
+  async findByLeadId(leadId: string, organizationId: string): Promise<unknown | null> {
     if (!Types.ObjectId.isValid(leadId)) return null;
     const [doc] = await ProspectModel.aggregate([
-      { $match: { leadId: new Types.ObjectId(leadId) } },
+      { $match: { leadId: new Types.ObjectId(leadId), ...orgFilter(organizationId) } },
       ...ENRICH_STAGES,
       { $project: PROJECT_PROSPECT },
     ]);
     return doc ?? null;
   }
 
-  async stats() {
+  async stats(organizationId: string) {
+    const org = orgFilter(organizationId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -365,6 +371,7 @@ export class ProspectService {
     const stale = staleCutoff();
 
     const [agg] = await ProspectModel.aggregate([
+      { $match: org },
       {
         $facet: {
           open: [
@@ -447,7 +454,7 @@ export class ProspectService {
     const onHoldValue = agg?.onHoldValue?.[0]?.total ?? 0;
     const onHoldExpiringSoon = agg?.onHoldExpiring?.[0]?.count ?? 0;
 
-    const openProspects = await ProspectModel.find({ status: ProspectStatus.OPEN }).lean();
+    const openProspects = await ProspectModel.find({ status: ProspectStatus.OPEN, ...org }).lean();
     let atRiskCount = 0;
     let criticalCount = 0;
     for (const p of openProspects) {
@@ -483,8 +490,8 @@ export class ProspectService {
     };
   }
 
-  async kanban(filters: ListProspectsFilters, callerUserId: string) {
-    const match = this.buildMatch(filters, callerUserId);
+  async kanban(filters: ListProspectsFilters, callerUserId: string, organizationId: string) {
+    const match = this.buildMatch(filters, callerUserId, organizationId);
     match.status = ProspectStatus.OPEN;
 
     const docs = await ProspectModel.aggregate([
@@ -507,7 +514,7 @@ export class ProspectService {
     });
 
     const onHoldDocs = await ProspectModel.aggregate([
-      { $match: { status: ProspectStatus.ON_HOLD } },
+      { $match: { status: ProspectStatus.ON_HOLD, ...orgFilter(organizationId) } },
       ...ENRICH_STAGES,
       { $sort: { dealValue: -1 } },
       { $project: PROJECT_PROSPECT },
@@ -526,9 +533,9 @@ export class ProspectService {
     return { columns };
   }
 
-  async forecast(callerUserId: string) {
+  async forecast(organizationId: string) {
     const docs = (await ProspectModel.aggregate([
-      { $match: { status: ProspectStatus.OPEN } },
+      { $match: { status: ProspectStatus.OPEN, ...orgFilter(organizationId) } },
       ...ENRICH_STAGES,
       { $sort: { expectedCloseDate: 1 } },
       { $project: PROJECT_PROSPECT },
@@ -540,7 +547,7 @@ export class ProspectService {
       assignedUserId: string;
       assignee?: { id?: string; name?: string };
     }>;
-    void callerUserId;
+    void organizationId;
 
     const total = docs.reduce((acc, p) => acc + (p.dealValue || 0), 0);
     const weighted = docs.reduce(
@@ -587,11 +594,16 @@ export class ProspectService {
     };
   }
 
-  async followUps(callerUserId: string) {
-    return followUpService.listOpen('prospect', callerUserId);
+  async followUps(callerUserId: string, organizationId: string) {
+    return followUpService.listOpen('prospect', callerUserId, organizationId);
   }
 
-  private async autoTasksForStage(prospect: IProspect, stage: PipelineStage, userId: string): Promise<void> {
+  private async autoTasksForStage(
+    prospect: IProspect,
+    stage: PipelineStage,
+    userId: string,
+    organizationId: string,
+  ): Promise<void> {
     const now = Date.now();
     const daysFromNow = (n: number) => new Date(now + n * 86400000);
 
@@ -600,11 +612,11 @@ export class ProspectService {
         const due = prospect.demoDate
           ? new Date(new Date(prospect.demoDate).getTime() - 86400000)
           : daysFromNow(1);
-        await activityService.logSystem('prospect', prospect._id as Types.ObjectId, ActivityType.FOLLOW_UP, 'Confirm demo logistics', { occurredAt: due }, userId);
+        await activityService.logSystem('prospect', prospect._id as Types.ObjectId, ActivityType.FOLLOW_UP, 'Confirm demo logistics', organizationId, { occurredAt: due }, userId);
         break;
       }
       case PipelineStage.DEMO_DONE:
-        await activityService.logSystem('prospect', prospect._id as Types.ObjectId, ActivityType.FOLLOW_UP, 'Send quotation', { occurredAt: daysFromNow(3) }, userId);
+        await activityService.logSystem('prospect', prospect._id as Types.ObjectId, ActivityType.FOLLOW_UP, 'Send quotation', organizationId, { occurredAt: daysFromNow(3) }, userId);
         break;
       case PipelineStage.QUOTATION_SENT:
         for (const d of [3, 7, 14, 21]) {
@@ -613,6 +625,7 @@ export class ProspectService {
             prospect._id as Types.ObjectId,
             ActivityType.FOLLOW_UP,
             `Follow up on quote (day ${d})`,
+            organizationId,
             { occurredAt: daysFromNow(d) },
             userId,
           );
@@ -625,6 +638,7 @@ export class ProspectService {
             prospect._id as Types.ObjectId,
             ActivityType.SYSTEM,
             'Manager notified — large deal in negotiation',
+            organizationId,
             {},
             userId,
           );
@@ -635,16 +649,22 @@ export class ProspectService {
     }
   }
 
-  async convertLead(leadId: string, dto: ConvertLeadDto, userId: string): Promise<IProspect> {
+  async convertLead(leadId: string, dto: ConvertLeadDto, userId: string, organizationId: string): Promise<IProspect> {
     if (!Types.ObjectId.isValid(leadId)) throw new AppError(400, 'Invalid lead id');
-    const existing = await ProspectModel.findOne({ leadId: new Types.ObjectId(leadId) });
+    const existing = await ProspectModel.findOne({
+      leadId: new Types.ObjectId(leadId),
+      ...orgFilter(organizationId),
+    });
     if (existing) throw new AppError(409, 'Lead has already been converted');
 
-    const lead: ILead | null = await LeadModel.findById(leadId);
+    const lead: ILead | null = await LeadModel.findOne({
+      _id: leadId,
+      ...orgFilter(organizationId),
+    });
     if (!lead) throw new AppError(404, 'Lead not found');
 
     const probability = dto.winProbability ?? STAGE_DEFAULT_PROBABILITY[dto.stage];
-    const seq = await srCounterService.nextSequence('prospect');
+    const seq = await srCounterService.nextSequence(`${organizationId}:prospect`);
     const code = `PR-${pad(seq)}`;
 
     const assignedUserId = dto.assignedUserId
@@ -655,6 +675,7 @@ export class ProspectService {
 
     const prospect = await ProspectModel.create({
       code,
+      organizationId: orgFilter(organizationId).organizationId,
       leadId: lead._id,
       leadCode: lead.code,
       firstName: lead.firstName,
@@ -698,15 +719,19 @@ export class ProspectService {
         : {}),
     });
 
-    await LeadModel.findByIdAndUpdate(lead._id, {
-      status: LeadStatus.CONVERTED,
-      convertedAt: now,
-      lastActivityAt: now,
-    });
+    await LeadModel.findOneAndUpdate(
+      { _id: lead._id, ...orgFilter(organizationId) },
+      {
+        status: LeadStatus.CONVERTED,
+        convertedAt: now,
+        lastActivityAt: now,
+      },
+    );
 
     await activityService.relinkLeadActivitiesToProspect(
       lead._id as Types.ObjectId,
       prospect._id as Types.ObjectId,
+      organizationId,
     );
 
     await activityService.logSystem(
@@ -714,6 +739,7 @@ export class ProspectService {
       prospect._id as Types.ObjectId,
       ActivityType.CONVERSION,
       `Lead converted to prospect ${prospect.code}`,
+      organizationId,
       {
         description: `Converted from ${lead.code}`,
         metadata: { leadId: String(lead._id), leadCode: lead.code },
@@ -721,15 +747,15 @@ export class ProspectService {
       userId,
     );
 
-    await this.autoTasksForStage(prospect, dto.stage, userId);
+    await this.autoTasksForStage(prospect, dto.stage, userId, organizationId);
 
     logger.info('Lead converted to prospect', { leadId, prospectId: prospect._id, code, by: userId });
     return prospect;
   }
 
-  async update(id: string, patch: Record<string, unknown>, userId: string): Promise<IProspect> {
+  async update(id: string, patch: Record<string, unknown>, userId: string, organizationId: string): Promise<IProspect> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const prev = await ProspectModel.findById(id);
+    const prev = await ProspectModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Prospect not found');
     if (prev.status !== ProspectStatus.OPEN) {
       throw new AppError(400, 'Closed prospects cannot be edited');
@@ -751,8 +777,8 @@ export class ProspectService {
     } = patch as Record<string, unknown>;
 
     const now = new Date();
-    const updated = await ProspectModel.findByIdAndUpdate(
-      id,
+    const updated = await ProspectModel.findOneAndUpdate(
+      { _id: id, ...orgFilter(organizationId) },
       { ...updateData, lastActivityAt: now },
       { new: true, runValidators: true },
     );
@@ -768,6 +794,7 @@ export class ProspectService {
       updated._id as Types.ObjectId,
       ActivityType.SYSTEM,
       'Prospect details updated',
+      organizationId,
       {},
       userId,
     );
@@ -775,9 +802,9 @@ export class ProspectService {
     return updated;
   }
 
-  async changeStage(id: string, dto: ChangeStageDto, userId: string): Promise<IProspect> {
+  async changeStage(id: string, dto: ChangeStageDto, userId: string, organizationId: string): Promise<IProspect> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const prev = await ProspectModel.findById(id);
+    const prev = await ProspectModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Prospect not found');
     if (prev.status !== ProspectStatus.OPEN) {
       throw new AppError(400, 'Closed prospects cannot change stage');
@@ -798,6 +825,7 @@ export class ProspectService {
       prev._id as Types.ObjectId,
       ActivityType.STAGE_CHANGE,
       `Stage changed: ${prev.stage}`,
+      organizationId,
       {
         description: dto.note,
         metadata: { fromStage: prev.stage, toStage: dto.stage },
@@ -805,13 +833,13 @@ export class ProspectService {
       userId,
     );
 
-    await this.autoTasksForStage(prev, dto.stage, userId);
+    await this.autoTasksForStage(prev, dto.stage, userId, organizationId);
     return prev;
   }
 
-  async markWon(id: string, dto: MarkWonDto, userId: string): Promise<IProspect> {
+  async markWon(id: string, dto: MarkWonDto, userId: string, organizationId: string): Promise<IProspect> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const prev = await ProspectModel.findById(id);
+    const prev = await ProspectModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Prospect not found');
 
     const now = new Date();
@@ -831,6 +859,7 @@ export class ProspectService {
       prev._id as Types.ObjectId,
       ActivityType.WON,
       `Deal won — PO ${dto.poNumber}`,
+      organizationId,
       {
         description: dto.note,
         metadata: { poNumber: dto.poNumber, poDate: prev.poDate },
@@ -840,9 +869,9 @@ export class ProspectService {
     return prev;
   }
 
-  async markLost(id: string, dto: MarkLostDto, userId: string): Promise<IProspect> {
+  async markLost(id: string, dto: MarkLostDto, userId: string, organizationId: string): Promise<IProspect> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const prev = await ProspectModel.findById(id);
+    const prev = await ProspectModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Prospect not found');
 
     const now = new Date();
@@ -862,6 +891,7 @@ export class ProspectService {
       prev._id as Types.ObjectId,
       ActivityType.LOST,
       `Deal lost — ${dto.lostReason}`,
+      organizationId,
       {
         description: dto.note,
         metadata: { lostReason: dto.lostReason, lostToCompetitor: dto.lostToCompetitor },
@@ -871,23 +901,28 @@ export class ProspectService {
     return prev;
   }
 
-  async remove(id: string, userId: string): Promise<void> {
+  async remove(id: string, userId: string, organizationId: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const res = await ProspectModel.findByIdAndDelete(id);
+    const res = await ProspectModel.findOneAndDelete({ _id: id, ...orgFilter(organizationId) });
     if (!res) throw new AppError(404, 'Prospect not found');
     logger.info('Prospect deleted', { id, by: userId });
   }
 
-  async clearFollowUp(id: string): Promise<IProspect> {
-    return followUpService.clearFollowUp('prospect', id) as Promise<IProspect>;
+  async clearFollowUp(id: string, organizationId: string): Promise<IProspect> {
+    return followUpService.clearFollowUp('prospect', id, organizationId) as Promise<IProspect>;
   }
 
-  async syncFollowUpFromActivity(prospectId: string, occurredAt: Date, mode?: string): Promise<void> {
-    return followUpService.syncFromActivity('prospect', prospectId, occurredAt, mode);
+  async syncFollowUpFromActivity(
+    prospectId: string,
+    occurredAt: Date,
+    organizationId: string,
+    mode?: string,
+  ): Promise<void> {
+    return followUpService.syncFromActivity('prospect', prospectId, occurredAt, organizationId, mode);
   }
 
-  async touchLastActivity(prospectId: string): Promise<void> {
-    return followUpService.touchLastActivity('prospect', prospectId);
+  async touchLastActivity(prospectId: string, organizationId: string): Promise<void> {
+    return followUpService.touchLastActivity('prospect', prospectId, organizationId);
   }
 
   async completeFollowUp(
@@ -899,8 +934,9 @@ export class ProspectService {
       reschedule?: { occurredAt: Date | string; mode: FollowUpMode; note?: string };
     },
     userId: string,
+    organizationId: string,
   ): Promise<{ prospect: IProspect; completedFollowUpId: string | null; touchpointId: string; scheduledId: string | null }> {
-    const result = await followUpService.completeFollowUp('prospect', id, dto, userId);
+    const result = await followUpService.completeFollowUp('prospect', id, dto, userId, organizationId);
     return {
       prospect: result.entity as IProspect,
       completedFollowUpId: result.completedFollowUpId,
@@ -912,14 +948,15 @@ export class ProspectService {
   async listCompletedFollowUps(
     days: number,
     callerUserId: string,
+    organizationId: string,
     scope?: 'mine' | 'all',
   ): Promise<unknown[]> {
-    return followUpService.listCompleted('prospect', days, callerUserId, scope);
+    return followUpService.listCompleted('prospect', days, callerUserId, organizationId, scope);
   }
 
-  async putOnHold(id: string, dto: PutOnHoldDto, userId: string): Promise<IProspect> {
+  async putOnHold(id: string, dto: PutOnHoldDto, userId: string, organizationId: string): Promise<IProspect> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const prev = await ProspectModel.findById(id);
+    const prev = await ProspectModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Prospect not found');
     if ([ProspectStatus.WON, ProspectStatus.LOST, ProspectStatus.ON_HOLD].includes(prev.status)) {
       throw new AppError(400, 'Prospect cannot be put on hold in its current status');
@@ -934,13 +971,14 @@ export class ProspectService {
     prev.heldAt = new Date();
     prev.heldBy = new Types.ObjectId(userId);
     await prev.save();
-    await followUpService.clearFollowUp('prospect', id);
+    await followUpService.clearFollowUp('prospect', id, organizationId);
 
     await activityService.logSystem(
       'prospect',
       prev._id as Types.ObjectId,
       ActivityType.ON_HOLD,
       'Prospect put on hold',
+      organizationId,
       {
         description: dto.holdNotes ?? undefined,
         metadata: { holdReason: dto.holdReason, holdUntil: prev.holdUntil },
@@ -950,9 +988,9 @@ export class ProspectService {
     return prev;
   }
 
-  async resume(id: string, dto: ResumeDto, userId: string): Promise<IProspect> {
+  async resume(id: string, dto: ResumeDto, userId: string, organizationId: string): Promise<IProspect> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
-    const prev = await ProspectModel.findById(id);
+    const prev = await ProspectModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Prospect not found');
     if (prev.status !== ProspectStatus.ON_HOLD) throw new AppError(400, 'Prospect is not on hold');
 
@@ -970,7 +1008,13 @@ export class ProspectService {
 
     if (dto.followUpDate) {
       const mode = (dto.followUpMode ?? FollowUpMode.PHONE) as FollowUpMode;
-      await followUpService.syncFromActivity('prospect', id, new Date(dto.followUpDate), mode);
+      await followUpService.syncFromActivity(
+        'prospect',
+        id,
+        new Date(dto.followUpDate),
+        organizationId,
+        mode,
+      );
     }
 
     await activityService.logSystem(
@@ -978,17 +1022,22 @@ export class ProspectService {
       prev._id as Types.ObjectId,
       ActivityType.RESUMED,
       'Prospect resumed from hold',
+      organizationId,
       { description: dto.note ?? undefined },
       userId,
     );
     return prev;
   }
 
-  async snooze(id: string, dto: SnoozeDto, _userId: string): Promise<IProspect> {
+  async snooze(id: string, dto: SnoozeDto, _userId: string, organizationId: string): Promise<IProspect> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid prospect id');
     const until = new Date();
     until.setDate(until.getDate() + dto.days);
-    const prev = await ProspectModel.findByIdAndUpdate(id, { alertSnoozedUntil: until }, { new: true });
+    const prev = await ProspectModel.findOneAndUpdate(
+      { _id: id, ...orgFilter(organizationId) },
+      { alertSnoozedUntil: until },
+      { new: true },
+    );
     if (!prev) throw new AppError(404, 'Prospect not found');
     return prev;
   }

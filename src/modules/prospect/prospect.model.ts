@@ -99,6 +99,7 @@ export interface IProspect extends Document {
   lostToCompetitor?: string;
   convertedAt: Date;
   convertedBy: string;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   holdReason?: HoldReason | null;
   holdUntil?: Date | null;
@@ -159,6 +160,7 @@ const prospectSchema = new Schema<IProspect>(
     lostToCompetitor: { type: String, trim: true },
     convertedAt: { type: Date, required: true, default: () => new Date() },
     convertedBy: { type: String, required: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
     holdReason: { type: String, enum: Object.values(HoldReason), default: null },
     holdUntil: { type: Date, default: null },

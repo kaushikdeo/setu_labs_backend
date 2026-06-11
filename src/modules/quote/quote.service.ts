@@ -26,6 +26,7 @@ import { ActivityType } from '../activity/activity.model';
 import { srCounterService } from '../sr-counter/sr-counter.service';
 import { UserModel } from '../user/user.model';
 import { AppError } from '../../utils/app-error';
+import { orgFilter } from '../../utils/tenant';
 import { OrganizationModel } from '../organization/organization.model';
 import { generateQuotePdfBuffer } from './quote-pdf.generator';
 import { storageService } from '../storage/storage.service';
@@ -179,18 +180,25 @@ function buildVersionNumber(parentNumber: string, version: number): string {
   return parentNumber.replace(/-V\d+$/i, `-V${version}`);
 }
 
-async function loadOpportunityOr404(opportunityId: Types.ObjectId): Promise<IOpportunity> {
-  const opp = await OpportunityModel.findById(opportunityId);
+async function loadOpportunityOr404(
+  opportunityId: Types.ObjectId,
+  organizationId: string,
+): Promise<IOpportunity> {
+  const opp = await OpportunityModel.findOne({ _id: opportunityId, ...orgFilter(organizationId) });
   if (!opp) throw new AppError(404, 'Opportunity not found');
   return opp;
 }
 
-async function syncOpportunityWithPrimaryQuote(opportunityId: Types.ObjectId): Promise<void> {
-  const primary = await QuoteModel.findOne({ opportunityId, isPrimary: true }).sort({
+async function syncOpportunityWithPrimaryQuote(
+  opportunityId: Types.ObjectId,
+  organizationId: string,
+): Promise<void> {
+  const org = orgFilter(organizationId);
+  const primary = await QuoteModel.findOne({ opportunityId, isPrimary: true, ...org }).sort({
     version: -1,
   });
-  const count = await QuoteModel.countDocuments({ opportunityId });
-  await opportunityService.updateActiveQuoteDenorm(String(opportunityId), {
+  const count = await QuoteModel.countDocuments({ opportunityId, ...org });
+  await opportunityService.updateActiveQuoteDenorm(String(opportunityId), organizationId, {
     activeQuoteId: primary ? (primary._id as Types.ObjectId) : null,
     activeQuoteNumber: primary?.number ?? null,
     activeQuoteStatus: primary?.status ?? null,
@@ -263,8 +271,8 @@ export interface RejectQuoteDto {
 }
 
 export class QuoteService {
-  async list(filters: ListQuotesFilters): Promise<IQuote[]> {
-    const match: Record<string, unknown> = {};
+  async list(filters: ListQuotesFilters, organizationId: string): Promise<IQuote[]> {
+    const match: Record<string, unknown> = { ...orgFilter(organizationId) };
     if (filters.opportunityId && Types.ObjectId.isValid(filters.opportunityId)) {
       match.opportunityId = new Types.ObjectId(filters.opportunityId);
     }
@@ -272,22 +280,25 @@ export class QuoteService {
     return QuoteModel.find(match).sort({ createdAt: -1 }).exec();
   }
 
-  async listForOpportunity(opportunityId: string): Promise<IQuote[]> {
+  async listForOpportunity(opportunityId: string, organizationId: string): Promise<IQuote[]> {
     if (!Types.ObjectId.isValid(opportunityId)) throw new AppError(400, 'Invalid opportunity id');
-    return QuoteModel.find({ opportunityId: new Types.ObjectId(opportunityId) })
+    return QuoteModel.find({
+      opportunityId: new Types.ObjectId(opportunityId),
+      ...orgFilter(organizationId),
+    })
       .sort({ createdAt: -1 })
       .exec();
   }
 
-  async getById(id: string): Promise<IQuote> {
+  async getById(id: string, organizationId: string): Promise<IQuote> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid quote id');
-    const doc = await QuoteModel.findById(id);
+    const doc = await QuoteModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!doc) throw new AppError(404, 'Quote not found');
     return doc;
   }
 
-  async pendingApprovals(): Promise<Record<string, unknown>[]> {
-    const rows = await QuoteModel.find({ status: QuoteStatus.UNDER_REVIEW })
+  async pendingApprovals(organizationId: string): Promise<Record<string, unknown>[]> {
+    const rows = await QuoteModel.find({ status: QuoteStatus.UNDER_REVIEW, ...orgFilter(organizationId) })
       .sort({ updatedAt: 1 })
       .lean();
 
@@ -325,12 +336,12 @@ export class QuoteService {
     });
   }
 
-  async create(dto: CreateQuoteDto, userId: string): Promise<IQuote> {
+  async create(dto: CreateQuoteDto, userId: string, organizationId: string): Promise<IQuote> {
     if (!Types.ObjectId.isValid(dto.opportunityId))
       throw new AppError(400, 'Invalid opportunity id');
-    const opp = await loadOpportunityOr404(new Types.ObjectId(dto.opportunityId));
+    const opp = await loadOpportunityOr404(new Types.ObjectId(dto.opportunityId), organizationId);
 
-    const seq = await srCounterService.nextSequence(`quote-${new Date().getFullYear()}`);
+    const seq = await srCounterService.nextSequence(`${organizationId}:quote-${new Date().getFullYear()}`);
     const number = `QT-${new Date().getFullYear()}-${pad(seq)}-V1`;
     const validity = dto.validityDate
       ? new Date(dto.validityDate)
@@ -355,6 +366,7 @@ export class QuoteService {
 
     const quote = await QuoteModel.create({
       opportunityId: opp._id,
+      organizationId: orgFilter(organizationId).organizationId,
       opportunityName: opp.name,
       customer: opp.company ?? `${opp.firstName} ${opp.lastName}`,
       number,
@@ -389,16 +401,18 @@ export class QuoteService {
       .changeStage(
         String(opp._id),
         { stage: OpportunityStage.QUOTE_IN_PROGRESS, note: `Draft quote ${quote.number} started` },
-        userId
+        userId,
+        organizationId,
       )
       .catch(() => undefined);
-    await syncOpportunityWithPrimaryQuote(opp._id as Types.ObjectId);
+    await syncOpportunityWithPrimaryQuote(opp._id as Types.ObjectId, organizationId);
 
     await activityService.logSystem(
       'opportunity',
       opp._id as Types.ObjectId,
       ActivityType.SYSTEM,
       `Quote ${quote.number} created`,
+      organizationId,
       { metadata: { quoteId: String(quote._id), quoteNumber: quote.number } },
       userId
     );
@@ -406,8 +420,8 @@ export class QuoteService {
     return quote;
   }
 
-  async update(id: string, dto: UpdateQuoteDto): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async update(id: string, dto: UpdateQuoteDto, organizationId: string): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.DRAFT && quote.status !== QuoteStatus.REVISION_REQUESTED) {
       throw new AppError(400, 'Quote can only be edited in draft or revision state');
     }
@@ -435,36 +449,37 @@ export class QuoteService {
       }
     }
     await recomputeAndSave(quote);
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
     return quote;
   }
 
-  async addLineItem(id: string, payload: Partial<IQuoteLineItem>): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async addLineItem(id: string, payload: Partial<IQuoteLineItem>, organizationId: string): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.DRAFT && quote.status !== QuoteStatus.REVISION_REQUESTED) {
       throw new AppError(400, 'Line items can only be edited in draft state');
     }
-    const opp = await loadOpportunityOr404(quote.opportunityId);
+    const opp = await loadOpportunityOr404(quote.opportunityId, organizationId);
     const gstType = detectGstType(opp.state);
     const nextSort = quote.lineItems?.length ?? 0;
     quote.lineItems.push(buildLineItem(payload, { gstType, sortOrder: nextSort }));
     await recomputeAndSave(quote);
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
     return quote;
   }
 
   async updateLineItem(
     id: string,
     lineId: string,
-    payload: Partial<IQuoteLineItem>
+    payload: Partial<IQuoteLineItem>,
+    organizationId: string,
   ): Promise<IQuote> {
-    const quote = await this.getById(id);
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.DRAFT && quote.status !== QuoteStatus.REVISION_REQUESTED) {
       throw new AppError(400, 'Line items can only be edited in draft state');
     }
     const idx = quote.lineItems.findIndex((l) => l.id === lineId);
     if (idx < 0) throw new AppError(404, 'Line item not found');
-    const opp = await loadOpportunityOr404(quote.opportunityId);
+    const opp = await loadOpportunityOr404(quote.opportunityId, organizationId);
     const gstType = detectGstType(opp.state);
     const existingRaw = quote.lineItems[idx] as IQuoteLineItem & {
       toObject?: () => IQuoteLineItem;
@@ -475,24 +490,24 @@ export class QuoteService {
       { gstType },
     );
     await recomputeAndSave(quote);
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
     return quote;
   }
 
-  async removeLineItem(id: string, lineId: string): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async removeLineItem(id: string, lineId: string, organizationId: string): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.DRAFT && quote.status !== QuoteStatus.REVISION_REQUESTED) {
       throw new AppError(400, 'Line items can only be edited in draft state');
     }
     quote.lineItems = quote.lineItems.filter((l) => l.id !== lineId);
     quote.lineItems.forEach((l, idx) => (l.sortOrder = idx));
     await recomputeAndSave(quote);
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
     return quote;
   }
 
-  async reorderLineItems(id: string, orderedIds: string[]): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async reorderLineItems(id: string, orderedIds: string[], organizationId: string): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.DRAFT && quote.status !== QuoteStatus.REVISION_REQUESTED) {
       throw new AppError(400, 'Line items can only be edited in draft state');
     }
@@ -513,8 +528,13 @@ export class QuoteService {
     return quote;
   }
 
-  async submitForReview(id: string, note: string | undefined, userId: string): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async submitForReview(
+    id: string,
+    note: string | undefined,
+    userId: string,
+    organizationId: string,
+  ): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.DRAFT && quote.status !== QuoteStatus.REVISION_REQUESTED) {
       throw new AppError(400, 'Only draft quotes can be submitted for review');
     }
@@ -543,16 +563,18 @@ export class QuoteService {
           stage: OpportunityStage.UNDER_REVIEW,
           note: `Quote ${quote.number} submitted for review`,
         },
-        userId
+        userId,
+        organizationId,
       )
       .catch(() => undefined);
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
 
     await activityService.logSystem(
       'opportunity',
       quote.opportunityId,
       ActivityType.SYSTEM,
       `Quote ${quote.number} submitted for review`,
+      organizationId,
       {
         metadata: {
           quoteId: String(quote._id),
@@ -565,8 +587,13 @@ export class QuoteService {
     return quote;
   }
 
-  async technicalAction(id: string, dto: ReviewActionDto, userId: string): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async technicalAction(
+    id: string,
+    dto: ReviewActionDto,
+    userId: string,
+    organizationId: string,
+  ): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.UNDER_REVIEW)
       throw new AppError(400, 'Quote is not under review');
     const user = await UserModel.findById(userId).lean();
@@ -586,7 +613,8 @@ export class QuoteService {
         .changeStage(
           String(quote.opportunityId),
           { stage: OpportunityStage.REVISION_REQUESTED, note: 'Technical review returned' },
-          userId
+          userId,
+          organizationId,
         )
         .catch(() => undefined);
     } else if (
@@ -599,18 +627,24 @@ export class QuoteService {
         .changeStage(
           String(quote.opportunityId),
           { stage: OpportunityStage.QUOTE_APPROVED, note: `Quote ${quote.number} approved` },
-          userId
+          userId,
+          organizationId,
         )
         .catch(() => undefined);
     } else {
       await quote.save();
     }
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
     return quote;
   }
 
-  async managerAction(id: string, dto: ReviewActionDto, userId: string): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async managerAction(
+    id: string,
+    dto: ReviewActionDto,
+    userId: string,
+    organizationId: string,
+  ): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.UNDER_REVIEW)
       throw new AppError(400, 'Quote is not under review');
     if (!quote.requiresManagerReview)
@@ -632,7 +666,8 @@ export class QuoteService {
         .changeStage(
           String(quote.opportunityId),
           { stage: OpportunityStage.REVISION_REQUESTED, note: 'Manager review returned' },
-          userId
+          userId,
+          organizationId,
         )
         .catch(() => undefined);
     } else if (quote.technicalReview?.state === ReviewState.APPROVED) {
@@ -642,19 +677,23 @@ export class QuoteService {
         .changeStage(
           String(quote.opportunityId),
           { stage: OpportunityStage.QUOTE_APPROVED, note: `Quote ${quote.number} approved` },
-          userId
+          userId,
+          organizationId,
         )
         .catch(() => undefined);
     } else {
       await quote.save();
     }
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
     return quote;
   }
 
-  async buildPdfBuffer(id: string): Promise<Buffer> {
-    const quote = await this.getById(id);
-    const opportunity = await OpportunityModel.findById(quote.opportunityId);
+  async buildPdfBuffer(id: string, organizationId: string): Promise<Buffer> {
+    const quote = await this.getById(id, organizationId);
+    const opportunity = await OpportunityModel.findOne({
+      _id: quote.opportunityId,
+      ...orgFilter(organizationId),
+    });
     if (!opportunity) throw new AppError(404, 'Opportunity not found');
 
     let tcBody: string | undefined;
@@ -663,7 +702,7 @@ export class QuoteService {
       tcBody = (tpl as { body?: string } | null)?.body;
     }
 
-    const organization = await OrganizationModel.findOne().lean();
+    const organization = await OrganizationModel.findById(organizationId).lean();
     return generateQuotePdfBuffer({
       quote,
       opportunity,
@@ -672,13 +711,13 @@ export class QuoteService {
     });
   }
 
-  async generatePdf(id: string): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async generatePdf(id: string, organizationId: string): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.lineItems.filter((l) => !l.isOptional).length === 0) {
       throw new AppError(400, 'Add at least one line item before generating a PDF');
     }
 
-    const buffer = await this.buildPdfBuffer(id);
+    const buffer = await this.buildPdfBuffer(id, organizationId);
     const filename = `${quote.number.replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
 
     try {
@@ -698,24 +737,24 @@ export class QuoteService {
     return quote;
   }
 
-  async streamPdf(id: string): Promise<{ buffer: Buffer; filename: string }> {
-    const quote = await this.getById(id);
+  async streamPdf(id: string, organizationId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const quote = await this.getById(id, organizationId);
     if (quote.lineItems.filter((l) => !l.isOptional).length === 0) {
       throw new AppError(400, 'Add at least one line item before downloading the PDF');
     }
-    const buffer = await this.buildPdfBuffer(id);
+    const buffer = await this.buildPdfBuffer(id, organizationId);
     const filename = `${quote.number.replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
     return { buffer, filename };
   }
 
-  async send(id: string, dto: SendQuoteDto, userId: string): Promise<IQuote> {
-    let quote = await this.getById(id);
+  async send(id: string, dto: SendQuoteDto, userId: string, organizationId: string): Promise<IQuote> {
+    let quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.APPROVED) {
       throw new AppError(400, 'Only approved quotes can be sent');
     }
     if (!quote.pdfUrl) {
-      await this.generatePdf(id);
-      quote = await this.getById(id);
+      await this.generatePdf(id, organizationId);
+      quote = await this.getById(id, organizationId);
     }
     quote.status = QuoteStatus.SENT;
     quote.sentAt = new Date();
@@ -728,10 +767,11 @@ export class QuoteService {
       .changeStage(
         String(quote.opportunityId),
         { stage: OpportunityStage.QUOTE_SENT, note: `Quote ${quote.number} sent to customer` },
-        userId
+        userId,
+        organizationId,
       )
       .catch(() => undefined);
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
 
     await activityService.add(
       {
@@ -744,17 +784,19 @@ export class QuoteService {
         occurredAt: new Date(),
         metadata: { quoteId: String(quote._id), to: dto.to, cc: dto.cc, subject: dto.subject },
       },
-      userId
+      userId,
+      organizationId,
     );
 
     return quote;
   }
 
-  async reviseFrom(parentId: string, userId: string): Promise<IQuote> {
-    const parent = await this.getById(parentId);
+  async reviseFrom(parentId: string, userId: string, organizationId: string): Promise<IQuote> {
+    const parent = await this.getById(parentId, organizationId);
     const user = await UserModel.findById(userId).lean();
     const child = await QuoteModel.create({
       opportunityId: parent.opportunityId,
+      organizationId: orgFilter(organizationId).organizationId,
       opportunityName: parent.opportunityName,
       customer: parent.customer,
       number: buildVersionNumber(parent.number, parent.version + 1),
@@ -797,16 +839,18 @@ export class QuoteService {
       .changeStage(
         String(parent.opportunityId),
         { stage: OpportunityStage.QUOTE_IN_PROGRESS, note: `Revision ${child.number} created` },
-        userId
+        userId,
+        organizationId,
       )
       .catch(() => undefined);
-    await syncOpportunityWithPrimaryQuote(parent.opportunityId);
+    await syncOpportunityWithPrimaryQuote(parent.opportunityId, organizationId);
 
     await activityService.logSystem(
       'opportunity',
       parent.opportunityId,
       ActivityType.SYSTEM,
       `Quote revised from ${parent.number} → ${child.number}`,
+      organizationId,
       { metadata: { fromQuoteId: String(parent._id), toQuoteId: String(child._id) } },
       userId
     );
@@ -814,55 +858,57 @@ export class QuoteService {
     return child;
   }
 
-  async accept(id: string, dto: AcceptQuoteDto, userId: string): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async accept(id: string, dto: AcceptQuoteDto, userId: string, organizationId: string): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.SENT)
       throw new AppError(400, 'Only sent quotes can be accepted');
     quote.status = QuoteStatus.ACCEPTED;
     quote.acceptedAt = new Date();
     quote.customerPoNumber = dto.customerPoNumber;
     await quote.save();
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
 
     await activityService.logSystem(
       'opportunity',
       quote.opportunityId,
       ActivityType.SYSTEM,
       `Quote ${quote.number} accepted by customer`,
+      organizationId,
       { metadata: { quoteId: String(quote._id), customerPoNumber: dto.customerPoNumber } },
       userId
     );
     return quote;
   }
 
-  async reject(id: string, dto: RejectQuoteDto, userId: string): Promise<IQuote> {
-    const quote = await this.getById(id);
+  async reject(id: string, dto: RejectQuoteDto, userId: string, organizationId: string): Promise<IQuote> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.SENT)
       throw new AppError(400, 'Only sent quotes can be rejected');
     quote.status = QuoteStatus.REJECTED;
     quote.rejectedAt = new Date();
     quote.rejectionReason = dto.reason;
     await quote.save();
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
 
     await activityService.logSystem(
       'opportunity',
       quote.opportunityId,
       ActivityType.SYSTEM,
       `Quote ${quote.number} rejected by customer`,
+      organizationId,
       { description: dto.reason, metadata: { quoteId: String(quote._id) } },
       userId
     );
     return quote;
   }
 
-  async remove(id: string): Promise<void> {
-    const quote = await this.getById(id);
+  async remove(id: string, organizationId: string): Promise<void> {
+    const quote = await this.getById(id, organizationId);
     if (quote.status !== QuoteStatus.DRAFT) {
       throw new AppError(400, 'Only draft quotes can be deleted');
     }
-    await QuoteModel.findByIdAndDelete(quote._id);
-    await syncOpportunityWithPrimaryQuote(quote.opportunityId);
+    await QuoteModel.findOneAndDelete({ _id: quote._id, ...orgFilter(organizationId) });
+    await syncOpportunityWithPrimaryQuote(quote.opportunityId, organizationId);
   }
 }
 

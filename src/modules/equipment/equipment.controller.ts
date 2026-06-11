@@ -7,7 +7,7 @@ const equipmentService = new EquipmentService();
 export class EquipmentController {
   createEquipment = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const equipment = await equipmentService.createEquipment(req.body, req.user!.id);
+      const equipment = await equipmentService.createEquipment(req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('equipment.create', req, req.user!.id, {
         equipmentId: equipment._id,
         name: equipment.name,
@@ -20,7 +20,7 @@ export class EquipmentController {
 
   getAllEquipment = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const equipment = await equipmentService.getAllEquipment(req.query);
+      const equipment = await equipmentService.getAllEquipment(req.query, req.user!.organizationId!);
       res.status(200).json({ success: true, data: equipment });
     } catch (error) {
       next(error);
@@ -29,7 +29,7 @@ export class EquipmentController {
 
   getEquipmentById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const equipment = await equipmentService.getEquipmentById(req.params.id);
+      const equipment = await equipmentService.getEquipmentById(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: equipment });
     } catch (error) {
       next(error);
@@ -38,7 +38,7 @@ export class EquipmentController {
 
   updateEquipment = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const equipment = await equipmentService.updateEquipment(req.params.id, req.body, req.user!.id);
+      const equipment = await equipmentService.updateEquipment(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('equipment.update', req, req.user!.id, {
         equipmentId: equipment._id,
         updatedFields: Object.keys(req.body),
@@ -51,7 +51,7 @@ export class EquipmentController {
 
   deleteEquipment = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await equipmentService.deleteEquipment(req.params.id, req.user!.id);
+      await equipmentService.deleteEquipment(req.params.id, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('equipment.delete', req, req.user!.id, {
         equipmentId: req.params.id,
       });

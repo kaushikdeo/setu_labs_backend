@@ -10,15 +10,17 @@ import { TaskTestResultModel } from '../test-result/test-result.model';
 import { srCounterService } from '../sr-counter/sr-counter.service';
 import { AppError } from '../../utils/app-error';
 import { logger } from '../../config/logger';
+import { orgFilter } from '../../utils/tenant';
 
 async function buildCounterKey(
+  organizationId: string,
   scope: SrCounterScope,
   year: number,
   customerId: string,
   visitType: VisitType,
   suffix?: string,
 ): Promise<string> {
-  const parts: string[] = [];
+  const parts: string[] = [organizationId];
   if (scope === SrCounterScope.PER_YEAR) {
     parts.push(String(year));
   } else if (scope === SrCounterScope.PER_YEAR_CUSTOMER) {
@@ -35,12 +37,13 @@ function padSeq(n: number): string {
 }
 
 async function resolveEquipmentForTask(
+  organizationId: string,
   visitId: string,
   taskId: string,
   equipmentId: string,
   area?: string,
 ): Promise<{ equipmentId: Types.ObjectId; area?: string }> {
-  const equipment = await EquipmentModel.findById(equipmentId).lean();
+  const equipment = await EquipmentModel.findOne({ _id: equipmentId, ...orgFilter(organizationId) }).lean();
   if (!equipment) throw new AppError(404, 'Equipment not found');
 
   const duplicate = await VisitTaskModel.findOne({
@@ -64,8 +67,8 @@ async function resolveEquipmentForTask(
 }
 
 export class VisitService {
-  async getAllVisits(filters: any = {}): Promise<any[]> {
-    const matchStage: any = {};
+  async getAllVisits(filters: any = {}, organizationId: string): Promise<any[]> {
+    const matchStage: any = { ...orgFilter(organizationId) };
     if (filters.status) matchStage.status = filters.status;
     if (filters.type) matchStage.type = filters.type;
     if (filters.assignedEngineerId) {
@@ -143,9 +146,9 @@ export class VisitService {
     ]);
   }
 
-  async getVisitById(id: string): Promise<any> {
+  async getVisitById(id: string, organizationId: string): Promise<any> {
     const visits = await VisitModel.aggregate([
-      { $match: { _id: new Types.ObjectId(id) } },
+      { $match: { _id: new Types.ObjectId(id), ...orgFilter(organizationId) } },
       {
         $lookup: {
           from: 'customers',
@@ -222,14 +225,14 @@ export class VisitService {
     return visits[0];
   }
 
-  async createVisit(data: Partial<IVisit>, userId: string): Promise<IVisit> {
+  async createVisit(data: Partial<IVisit>, userId: string, organizationId: string): Promise<IVisit> {
     const code = `VISIT-${Date.now()}`;
 
     let srNumber: string | undefined;
     try {
       const [org, customer] = await Promise.all([
-        OrganizationModel.findOne().lean(),
-        CustomerModel.findById(data.customerId).lean(),
+        OrganizationModel.findById(organizationId).lean(),
+        CustomerModel.findOne({ _id: data.customerId, ...orgFilter(organizationId) }).lean(),
       ]);
 
       if (org && customer) {
@@ -238,7 +241,7 @@ export class VisitService {
         const typeSegment = data.type === VisitType.VALIDATION ? 'VALI' : 'CALI';
         const year = new Date().getFullYear();
         const scope: SrCounterScope = org.srCounterScope ?? SrCounterScope.PER_YEAR;
-        const key = await buildCounterKey(scope, year, (data.customerId as Types.ObjectId).toString(), data.type as VisitType);
+        const key = await buildCounterKey(organizationId, scope, year, (data.customerId as Types.ObjectId).toString(), data.type as VisitType);
         const seq = await srCounterService.nextSequence(key);
         const parts = [orgAbbr, custAbbr, typeSegment, String(year), padSeq(seq)].filter(Boolean);
         srNumber = parts.join('/');
@@ -251,14 +254,15 @@ export class VisitService {
       ...data,
       code,
       srNumber,
+      ...orgFilter(organizationId),
       createdBy: userId,
     });
     logger.info('Visit created', { visitId: visit._id, srNumber, createdBy: userId });
     return visit;
   }
 
-  async updateVisit(id: string, data: Partial<IVisit>, userId: string): Promise<IVisit> {
-    const existing = await VisitModel.findById(id);
+  async updateVisit(id: string, data: Partial<IVisit>, userId: string, organizationId: string): Promise<IVisit> {
+    const existing = await VisitModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!existing) throw new AppError(404, 'Visit not found');
 
     const { _id, id: _, __v, createdAt, updatedAt, createdBy, ...updateData } = data as any;
@@ -280,8 +284,8 @@ export class VisitService {
         throw new AppError(400, 'Due date can only be changed on an in-progress visit');
       }
       if (updateData.dueDate === null) {
-        const visit = await VisitModel.findByIdAndUpdate(
-          id,
+        const visit = await VisitModel.findOneAndUpdate(
+          { _id: id, ...orgFilter(organizationId) },
           { $unset: { dueDate: 1 } },
           { new: true },
         );
@@ -291,7 +295,7 @@ export class VisitService {
       }
     }
 
-    const visit = await VisitModel.findByIdAndUpdate(id, updateData, { new: true });
+    const visit = await VisitModel.findOneAndUpdate({ _id: id, ...orgFilter(organizationId) }, updateData, { new: true });
     if (!visit) throw new AppError(404, 'Visit not found');
     logger.info('Visit updated', { visitId: id, updatedBy: userId });
     return visit;
@@ -301,9 +305,10 @@ export class VisitService {
     visitId: string,
     validationDate: Date,
     userId: string,
+    organizationId: string,
     dueDate?: Date,
   ): Promise<IVisit> {
-    const visit = await VisitModel.findById(visitId);
+    const visit = await VisitModel.findOne({ _id: visitId, ...orgFilter(organizationId) });
     if (!visit) throw new AppError(404, 'Visit not found');
 
     const startPayload: Partial<IVisit> = { validationDate };
@@ -315,8 +320,8 @@ export class VisitService {
         throw new AppError(400, 'Add at least one equipment task before starting the service request');
       }
 
-      const updated = await VisitModel.findByIdAndUpdate(
-        visitId,
+      const updated = await VisitModel.findOneAndUpdate(
+        { _id: visitId, ...orgFilter(organizationId) },
         {
           ...startPayload,
           status: VisitStatus.IN_PROGRESS,
@@ -329,8 +334,8 @@ export class VisitService {
     }
 
     if (visit.status === VisitStatus.IN_PROGRESS && !visit.validationDate) {
-      const updated = await VisitModel.findByIdAndUpdate(
-        visitId,
+      const updated = await VisitModel.findOneAndUpdate(
+        { _id: visitId, ...orgFilter(organizationId) },
         startPayload,
         { new: true },
       );
@@ -346,8 +351,8 @@ export class VisitService {
     throw new AppError(400, 'Cannot set validation date on a completed or cancelled visit');
   }
 
-  async deleteVisit(id: string, userId: string): Promise<void> {
-    const visit = await VisitModel.findById(id);
+  async deleteVisit(id: string, userId: string, organizationId: string): Promise<void> {
+    const visit = await VisitModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!visit) throw new AppError(404, 'Visit not found');
 
     const taskIds = await VisitTaskModel.find({ visitId: id }, '_id').lean().then((docs) => docs.map((d) => d._id));
@@ -359,11 +364,12 @@ export class VisitService {
       await VisitTaskModel.deleteMany({ visitId: id });
     }
 
-    await VisitModel.findByIdAndDelete(id);
+    await VisitModel.findOneAndDelete({ _id: id, ...orgFilter(organizationId) });
     logger.info('Visit deleted', { visitId: id, deletedBy: userId });
   }
 
-  async getTasksByVisit(visitId: string): Promise<any[]> {
+  async getTasksByVisit(visitId: string, organizationId: string): Promise<any[]> {
+    await this.getVisitById(visitId, organizationId);
     return VisitTaskModel.aggregate([
       { $match: { visitId: new Types.ObjectId(visitId) } },
       {
@@ -409,8 +415,8 @@ export class VisitService {
     ]);
   }
 
-  async addTask(visitId: string, data: Partial<IVisitTask>, userId: string): Promise<IVisitTask> {
-    const visit = await VisitModel.findById(visitId);
+  async addTask(visitId: string, data: Partial<IVisitTask>, userId: string, organizationId: string): Promise<IVisitTask> {
+    const visit = await VisitModel.findOne({ _id: visitId, ...orgFilter(organizationId) });
     if (!visit) throw new AppError(404, 'Visit not found');
     if (visit.status === VisitStatus.COMPLETED || visit.status === VisitStatus.CANCELLED) {
       throw new AppError(400, 'Cannot add tasks to a completed or cancelled visit');
@@ -421,8 +427,8 @@ export class VisitService {
     if (plannedTests.length > 0) {
       try {
         const [org, customer] = await Promise.all([
-          OrganizationModel.findOne().lean(),
-          CustomerModel.findById(visit.customerId).lean(),
+          OrganizationModel.findById(organizationId).lean(),
+          CustomerModel.findOne({ _id: visit.customerId, ...orgFilter(organizationId) }).lean(),
         ]);
 
         if (org && customer) {
@@ -435,9 +441,9 @@ export class VisitService {
           plannedTests = await Promise.all(
             plannedTests.map(async (pt) => {
               try {
-                const testType = await TestTypeModel.findById(pt.testTypeId).lean();
+                const testType = await TestTypeModel.findOne({ _id: pt.testTypeId, ...orgFilter(organizationId) }).lean();
                 const testAbbr = testType?.abbreviation ?? '';
-                const key = await buildCounterKey(scope, year, visit.customerId.toString(), visit.type, testAbbr || undefined);
+                const key = await buildCounterKey(organizationId, scope, year, visit.customerId.toString(), visit.type, testAbbr || undefined);
                 const seq = await srCounterService.nextSequence(key);
                 const parts = [orgAbbr, custAbbr, typeSegment, testAbbr, String(year), padSeq(seq)].filter(Boolean);
                 return { ...pt, srNumber: parts.join('/') };
@@ -460,7 +466,7 @@ export class VisitService {
 
     let area = data.area?.trim();
     if (!area && data.equipmentId) {
-      const equipment = await EquipmentModel.findById(data.equipmentId).lean();
+      const equipment = await EquipmentModel.findOne({ _id: data.equipmentId, ...orgFilter(organizationId) }).lean();
       if (equipment) {
         area = equipment.area?.trim() || equipment.name;
       }
@@ -472,14 +478,16 @@ export class VisitService {
       area,
       plannedTests,
       visitId,
+      ...orgFilter(organizationId),
       createdBy: userId,
     });
     logger.info('Visit task added', { taskId: task._id, visitId, createdBy: userId });
     return task;
   }
 
-  async updateTask(visitId: string, taskId: string, data: Partial<IVisitTask>, userId: string): Promise<IVisitTask> {
-    const existing = await VisitTaskModel.findOne({ _id: taskId, visitId });
+  async updateTask(visitId: string, taskId: string, data: Partial<IVisitTask>, userId: string, organizationId: string): Promise<IVisitTask> {
+    await this.getVisitById(visitId, organizationId);
+    const existing = await VisitTaskModel.findOne({ _id: taskId, visitId, ...orgFilter(organizationId) });
     if (!existing) throw new AppError(404, 'Task not found');
     if (
       existing.status !== TaskStatus.PENDING &&
@@ -492,6 +500,7 @@ export class VisitService {
 
     if (updateData.equipmentId) {
       const resolved = await resolveEquipmentForTask(
+        organizationId,
         visitId,
         taskId,
         updateData.equipmentId,
@@ -504,7 +513,7 @@ export class VisitService {
     }
 
     const task = await VisitTaskModel.findOneAndUpdate(
-      { _id: taskId, visitId },
+      { _id: taskId, visitId, ...orgFilter(organizationId) },
       updateData,
       { new: true },
     );
@@ -513,8 +522,9 @@ export class VisitService {
     return task;
   }
 
-  async startTask(visitId: string, taskId: string, data: Partial<IVisitTask>, userId: string): Promise<IVisitTask> {
-    const task = await VisitTaskModel.findOne({ _id: taskId, visitId });
+  async startTask(visitId: string, taskId: string, data: Partial<IVisitTask>, userId: string, organizationId: string): Promise<IVisitTask> {
+    await this.getVisitById(visitId, organizationId);
+    const task = await VisitTaskModel.findOne({ _id: taskId, visitId, ...orgFilter(organizationId) });
     if (!task) throw new AppError(404, 'Task not found');
     if (task.status !== TaskStatus.PENDING) {
       throw new AppError(400, 'Task is not in pending state');
@@ -526,6 +536,7 @@ export class VisitService {
 
     if (setupData.equipmentId) {
       const resolved = await resolveEquipmentForTask(
+        organizationId,
         visitId,
         taskId,
         setupData.equipmentId,
@@ -539,7 +550,7 @@ export class VisitService {
 
     const instrumentId = setupData.instrumentId || task.instrumentId;
     if (instrumentId) {
-      const instrument = await MasterInstrumentModel.findById(instrumentId);
+      const instrument = await MasterInstrumentModel.findOne({ _id: instrumentId, ...orgFilter(organizationId) });
       if (!instrument) throw new AppError(404, 'Selected instrument not found');
 
       const now = new Date();
@@ -561,7 +572,7 @@ export class VisitService {
 
     // Transition visit to in_progress if still scheduled
     await VisitModel.findOneAndUpdate(
-      { _id: visitId, status: VisitStatus.SCHEDULED },
+      { _id: visitId, status: VisitStatus.SCHEDULED, ...orgFilter(organizationId) },
       { status: VisitStatus.IN_PROGRESS },
     );
 
@@ -569,8 +580,9 @@ export class VisitService {
     return updated;
   }
 
-  async completeTask(visitId: string, taskId: string, data: Partial<IVisitTask>, userId: string): Promise<IVisitTask> {
-    const task = await VisitTaskModel.findOne({ _id: taskId, visitId });
+  async completeTask(visitId: string, taskId: string, data: Partial<IVisitTask>, userId: string, organizationId: string): Promise<IVisitTask> {
+    await this.getVisitById(visitId, organizationId);
+    const task = await VisitTaskModel.findOne({ _id: taskId, visitId, ...orgFilter(organizationId) });
     if (!task) throw new AppError(404, 'Task not found');
     if (task.status !== TaskStatus.IN_PROGRESS) {
       throw new AppError(400, 'Task must be in progress before completing');
@@ -590,7 +602,7 @@ export class VisitService {
       status: { $in: [TaskStatus.PENDING, TaskStatus.IN_PROGRESS] },
     });
     if (pendingTasks === 0) {
-      await VisitModel.findByIdAndUpdate(visitId, {
+      await VisitModel.findOneAndUpdate({ _id: visitId, ...orgFilter(organizationId) }, {
         status: VisitStatus.COMPLETED,
         completedDate: new Date(),
       });

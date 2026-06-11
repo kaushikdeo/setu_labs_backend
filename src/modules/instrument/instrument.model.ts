@@ -23,6 +23,7 @@ export interface IMasterInstrument extends Omit<Document, 'model'> {
   status: InstrumentStatus;
   notes?: string;
   availableTestTypeIds: Types.ObjectId[];
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -49,6 +50,7 @@ const instrumentSchema = new Schema<IMasterInstrument>(
     },
     notes: { type: String, trim: true },
     availableTestTypeIds: [{ type: Schema.Types.ObjectId, ref: 'TestType' }],
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

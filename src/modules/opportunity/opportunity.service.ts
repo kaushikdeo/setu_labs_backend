@@ -26,6 +26,7 @@ import { ActivityModel, ActivityType } from '../activity/activity.model';
 import { followUpService } from '../follow-up/follow-up.service';
 import { srCounterService } from '../sr-counter/sr-counter.service';
 import { AppError } from '../../utils/app-error';
+import { orgFilter } from '../../utils/tenant';
 import { logger } from '../../config/logger';
 import { computeHealth, staleCutoffFor } from '../crm-health/compute-health';
 import { enrichWithHealth } from '../crm-health/enrich-health';
@@ -351,9 +352,10 @@ export interface MarkLostDto {
 export class OpportunityService {
   private buildMatch(
     filters: ListOpportunitiesFilters,
-    callerUserId: string
+    callerUserId: string,
+    organizationId: string,
   ): Record<string, unknown> {
-    const match: Record<string, unknown> = {};
+    const match: Record<string, unknown> = { ...orgFilter(organizationId) };
 
     if (filters.scope === 'mine') {
       match.assignedUserId = new Types.ObjectId(callerUserId);
@@ -402,8 +404,8 @@ export class OpportunityService {
     return match;
   }
 
-  async list(filters: ListOpportunitiesFilters, callerUserId: string) {
-    const match = this.buildMatch(filters, callerUserId);
+  async list(filters: ListOpportunitiesFilters, callerUserId: string, organizationId: string) {
+    const match = this.buildMatch(filters, callerUserId, organizationId);
     const page = Math.max(1, filters.page ?? 1);
     const limit = Math.max(1, Math.min(MAX_PAGE_SIZE, filters.limit ?? DEFAULT_PAGE_SIZE));
     const skip = (page - 1) * limit;
@@ -441,10 +443,10 @@ export class OpportunityService {
     return { data, page, limit, total };
   }
 
-  async getById(id: string): Promise<unknown> {
+  async getById(id: string, organizationId: string): Promise<unknown> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
     const [doc] = await OpportunityModel.aggregate([
-      { $match: { _id: new Types.ObjectId(id) } },
+      { $match: { _id: new Types.ObjectId(id), ...orgFilter(organizationId) } },
       ...ENRICH_STAGES,
       { $project: PROJECT_OPPORTUNITY },
     ]);
@@ -452,17 +454,18 @@ export class OpportunityService {
     return enrichWithHealth(doc as Record<string, unknown>, 'opportunity');
   }
 
-  async findByProspectId(prospectId: string): Promise<unknown | null> {
+  async findByProspectId(prospectId: string, organizationId: string): Promise<unknown | null> {
     if (!Types.ObjectId.isValid(prospectId)) return null;
     const [doc] = await OpportunityModel.aggregate([
-      { $match: { prospectId: new Types.ObjectId(prospectId) } },
+      { $match: { prospectId: new Types.ObjectId(prospectId), ...orgFilter(organizationId) } },
       ...ENRICH_STAGES,
       { $project: PROJECT_OPPORTUNITY },
     ]);
     return doc ?? null;
   }
 
-  async stats() {
+  async stats(organizationId: string) {
+    const org = orgFilter(organizationId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const monthStart = new Date();
@@ -473,6 +476,7 @@ export class OpportunityService {
     const stale = staleCutoff();
 
     const [agg] = await OpportunityModel.aggregate([
+      { $match: org },
       {
         $facet: {
           open: [
@@ -544,7 +548,7 @@ export class OpportunityService {
     const onHoldValue = agg?.onHoldValue?.[0]?.total ?? 0;
     const onHoldExpiringSoon = agg?.onHoldExpiring?.[0]?.count ?? 0;
 
-    const openOpps = await OpportunityModel.find({ status: OpportunityStatus.OPEN }).lean();
+    const openOpps = await OpportunityModel.find({ status: OpportunityStatus.OPEN, ...org }).lean();
     let atRiskCount = 0;
     let criticalCount = 0;
     for (const opp of openOpps) {
@@ -580,8 +584,8 @@ export class OpportunityService {
     };
   }
 
-  async kanban(filters: ListOpportunitiesFilters, callerUserId: string) {
-    const match = this.buildMatch(filters, callerUserId);
+  async kanban(filters: ListOpportunitiesFilters, callerUserId: string, organizationId: string) {
+    const match = this.buildMatch(filters, callerUserId, organizationId);
     match.status = OpportunityStatus.OPEN;
 
     const docs = (await OpportunityModel.aggregate([
@@ -602,7 +606,7 @@ export class OpportunityService {
     });
 
     const onHoldDocs = await OpportunityModel.aggregate([
-      { $match: { status: OpportunityStatus.ON_HOLD } },
+      { $match: { status: OpportunityStatus.ON_HOLD, ...orgFilter(organizationId) } },
       ...ENRICH_STAGES,
       { $sort: { dealValue: -1 } },
       { $project: PROJECT_OPPORTUNITY },
@@ -621,9 +625,9 @@ export class OpportunityService {
     return { columns };
   }
 
-  async forecast() {
+  async forecast(organizationId: string) {
     const docs = (await OpportunityModel.aggregate([
-      { $match: { status: OpportunityStatus.OPEN } },
+      { $match: { status: OpportunityStatus.OPEN, ...orgFilter(organizationId) } },
       ...ENRICH_STAGES,
       { $sort: { expectedCloseDate: 1 } },
       { $project: PROJECT_OPPORTUNITY },
@@ -695,18 +699,25 @@ export class OpportunityService {
     };
   }
 
-  async staleList() {
+  async staleList(organizationId: string) {
     return OpportunityModel.aggregate([
-      { $match: { status: OpportunityStatus.OPEN, lastActivityAt: { $lt: staleCutoff() } } },
+      {
+        $match: {
+          status: OpportunityStatus.OPEN,
+          lastActivityAt: { $lt: staleCutoff() },
+          ...orgFilter(organizationId),
+        },
+      },
       ...ENRICH_STAGES,
       { $sort: { lastActivityAt: 1 } },
       { $project: PROJECT_OPPORTUNITY },
     ]);
   }
 
-  async winLoss() {
+  async winLoss(organizationId: string) {
     const docs = (await OpportunityModel.find({
       status: { $in: [OpportunityStatus.WON, OpportunityStatus.LOST] },
+      ...orgFilter(organizationId),
     })
       .populate('assignedUserId', 'name')
       .lean()) as Array<{
@@ -853,7 +864,8 @@ export class OpportunityService {
   private async autoTasksForStage(
     opp: IOpportunity,
     stage: OpportunityStage,
-    userId: string
+    userId: string,
+    organizationId: string,
   ): Promise<void> {
     const now = Date.now();
     const daysFromNow = (n: number) => new Date(now + n * 86400000);
@@ -866,6 +878,7 @@ export class OpportunityService {
             opp._id as Types.ObjectId,
             ActivityType.FOLLOW_UP,
             `Follow up on quote (day ${d})`,
+            organizationId,
             { occurredAt: daysFromNow(d) },
             userId
           );
@@ -878,6 +891,7 @@ export class OpportunityService {
             opp._id as Types.ObjectId,
             ActivityType.SYSTEM,
             'Manager notified — large deal in negotiation',
+            organizationId,
             {},
             userId
           );
@@ -889,6 +903,7 @@ export class OpportunityService {
           opp._id as Types.ObjectId,
           ActivityType.FOLLOW_UP,
           'Chase PO document',
+          organizationId,
           { occurredAt: daysFromNow(2) },
           userId
         );
@@ -901,16 +916,23 @@ export class OpportunityService {
   async convertFromProspect(
     prospectId: string,
     dto: ConvertProspectDto,
-    userId: string
+    userId: string,
+    organizationId: string,
   ): Promise<IOpportunity> {
     if (!Types.ObjectId.isValid(prospectId)) throw new AppError(400, 'Invalid prospect id');
-    const existing = await OpportunityModel.findOne({ prospectId: new Types.ObjectId(prospectId) });
+    const existing = await OpportunityModel.findOne({
+      prospectId: new Types.ObjectId(prospectId),
+      ...orgFilter(organizationId),
+    });
     if (existing) throw new AppError(409, 'Prospect has already been converted to an opportunity');
 
-    const prospect: IProspect | null = await ProspectModel.findById(prospectId);
+    const prospect: IProspect | null = await ProspectModel.findOne({
+      _id: prospectId,
+      ...orgFilter(organizationId),
+    });
     if (!prospect) throw new AppError(404, 'Prospect not found');
 
-    const seq = await srCounterService.nextSequence('opportunity');
+    const seq = await srCounterService.nextSequence(`${organizationId}:opportunity`);
     const code = `OPP-${pad(seq)}`;
 
     const stage = OpportunityStage.SCOPE_DEFINED;
@@ -926,6 +948,7 @@ export class OpportunityService {
 
     const opp = await OpportunityModel.create({
       code,
+      organizationId: orgFilter(organizationId).organizationId,
       prospectId: prospect._id,
       prospectCode: prospect.code,
 
@@ -997,6 +1020,7 @@ export class OpportunityService {
       opp._id as Types.ObjectId,
       ActivityType.CONVERSION,
       `Prospect converted to opportunity ${opp.code}`,
+      organizationId,
       {
         description: `Converted from ${prospect.code}`,
         metadata: { prospectId: String(prospect._id), prospectCode: prospect.code },
@@ -1013,8 +1037,12 @@ export class OpportunityService {
     return opp;
   }
 
-  async createStandalone(dto: CreateStandaloneDto, userId: string): Promise<IOpportunity> {
-    const seq = await srCounterService.nextSequence('opportunity');
+  async createStandalone(
+    dto: CreateStandaloneDto,
+    userId: string,
+    organizationId: string,
+  ): Promise<IOpportunity> {
+    const seq = await srCounterService.nextSequence(`${organizationId}:opportunity`);
     const code = `OPP-${pad(seq)}`;
     const stage = OpportunityStage.SCOPE_DEFINED;
     const probability = STAGE_DEFAULT_PROBABILITY[stage];
@@ -1026,6 +1054,7 @@ export class OpportunityService {
 
     const opp = await OpportunityModel.create({
       code,
+      organizationId: orgFilter(organizationId).organizationId,
       prospectId: null,
       prospectCode: undefined,
 
@@ -1091,6 +1120,7 @@ export class OpportunityService {
       opp._id as Types.ObjectId,
       ActivityType.SYSTEM,
       `Opportunity ${opp.code} created`,
+      organizationId,
       {},
       userId
     );
@@ -1098,9 +1128,14 @@ export class OpportunityService {
     return opp;
   }
 
-  async update(id: string, patch: Record<string, unknown>, userId: string): Promise<IOpportunity> {
+  async update(
+    id: string,
+    patch: Record<string, unknown>,
+    userId: string,
+    organizationId: string,
+  ): Promise<IOpportunity> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
-    const prev = await OpportunityModel.findById(id);
+    const prev = await OpportunityModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Opportunity not found');
     if (prev.status !== OpportunityStatus.OPEN) {
       throw new AppError(400, 'Closed opportunities cannot be edited');
@@ -1135,8 +1170,8 @@ export class OpportunityService {
       updateData.technicalReviewerId = new Types.ObjectId(updateData.technicalReviewerId as string);
     }
 
-    const updated = await OpportunityModel.findByIdAndUpdate(
-      id,
+    const updated = await OpportunityModel.findOneAndUpdate(
+      { _id: id, ...orgFilter(organizationId) },
       { ...updateData, lastActivityAt: now },
       { new: true, runValidators: true }
     );
@@ -1152,6 +1187,7 @@ export class OpportunityService {
       updated._id as Types.ObjectId,
       ActivityType.SYSTEM,
       'Opportunity details updated',
+      organizationId,
       {},
       userId
     );
@@ -1159,9 +1195,14 @@ export class OpportunityService {
     return updated;
   }
 
-  async changeStage(id: string, dto: ChangeStageDto, userId: string): Promise<IOpportunity> {
+  async changeStage(
+    id: string,
+    dto: ChangeStageDto,
+    userId: string,
+    organizationId: string,
+  ): Promise<IOpportunity> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
-    const prev = await OpportunityModel.findById(id);
+    const prev = await OpportunityModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Opportunity not found');
     if (prev.status !== OpportunityStatus.OPEN && dto.stage !== prev.stage) {
       throw new AppError(400, 'Closed opportunities cannot change stage');
@@ -1183,6 +1224,7 @@ export class OpportunityService {
       prev._id as Types.ObjectId,
       ActivityType.STAGE_CHANGE,
       `Stage changed: ${fromStage} → ${dto.stage}`,
+      organizationId,
       {
         description: dto.note,
         metadata: { fromStage, toStage: dto.stage },
@@ -1190,13 +1232,13 @@ export class OpportunityService {
       userId
     );
 
-    await this.autoTasksForStage(prev, dto.stage, userId);
+    await this.autoTasksForStage(prev, dto.stage, userId, organizationId);
     return prev;
   }
 
-  async markWon(id: string, dto: MarkWonDto, userId: string): Promise<IOpportunity> {
+  async markWon(id: string, dto: MarkWonDto, userId: string, organizationId: string): Promise<IOpportunity> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
-    const prev = await OpportunityModel.findById(id);
+    const prev = await OpportunityModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Opportunity not found');
 
     const now = new Date();
@@ -1218,6 +1260,7 @@ export class OpportunityService {
       prev._id as Types.ObjectId,
       ActivityType.WON,
       `Deal won — PO ${dto.poNumber}`,
+      organizationId,
       {
         description: dto.note,
         metadata: {
@@ -1231,9 +1274,9 @@ export class OpportunityService {
     return prev;
   }
 
-  async markLost(id: string, dto: MarkLostDto, userId: string): Promise<IOpportunity> {
+  async markLost(id: string, dto: MarkLostDto, userId: string, organizationId: string): Promise<IOpportunity> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
-    const prev = await OpportunityModel.findById(id);
+    const prev = await OpportunityModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Opportunity not found');
 
     const now = new Date();
@@ -1258,6 +1301,7 @@ export class OpportunityService {
       prev._id as Types.ObjectId,
       ActivityType.LOST,
       `Deal lost — ${dto.lossReason}`,
+      organizationId,
       {
         description: dto.note,
         metadata: { lossReason: dto.lossReason, competitorWon: dto.competitorWon },
@@ -1267,29 +1311,38 @@ export class OpportunityService {
     return prev;
   }
 
-  async remove(id: string, userId: string): Promise<void> {
+  async remove(id: string, userId: string, organizationId: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
-    const res = await OpportunityModel.findByIdAndDelete(id);
+    const res = await OpportunityModel.findOneAndDelete({ _id: id, ...orgFilter(organizationId) });
     if (!res) throw new AppError(404, 'Opportunity not found');
-    await ActivityModel.deleteMany({ entityType: 'opportunity', entityId: new Types.ObjectId(id) });
+    await ActivityModel.deleteMany({
+      entityType: 'opportunity',
+      entityId: new Types.ObjectId(id),
+      ...orgFilter(organizationId),
+    });
     logger.info('Opportunity deleted', { id, by: userId });
   }
 
-  async touchLastActivity(opportunityId: string): Promise<void> {
+  async touchLastActivity(opportunityId: string, organizationId: string): Promise<void> {
     if (!Types.ObjectId.isValid(opportunityId)) return;
-    await OpportunityModel.findByIdAndUpdate(opportunityId, { lastActivityAt: new Date() });
+    await OpportunityModel.findOneAndUpdate(
+      { _id: opportunityId, ...orgFilter(organizationId) },
+      { lastActivityAt: new Date() },
+    );
   }
 
   async syncFollowUpFromActivity(
     opportunityId: string,
     occurredAt: Date,
+    organizationId: string,
     mode?: string
   ): Promise<void> {
-    return followUpService.syncFromActivity('opportunity', opportunityId, occurredAt, mode);
+    return followUpService.syncFromActivity('opportunity', opportunityId, occurredAt, organizationId, mode);
   }
 
   async updateActiveQuoteDenorm(
     opportunityId: string,
+    organizationId: string,
     fields: {
       activeQuoteId?: Types.ObjectId | null;
       activeQuoteNumber?: string | null;
@@ -1305,13 +1358,21 @@ export class OpportunityService {
       if (v !== undefined) update[k] = v;
     });
     if (Object.keys(update).length) {
-      await OpportunityModel.findByIdAndUpdate(opportunityId, update);
+      await OpportunityModel.findOneAndUpdate(
+        { _id: opportunityId, ...orgFilter(organizationId) },
+        update,
+      );
     }
   }
 
-  async putOnHold(id: string, dto: PutOnHoldDto, userId: string): Promise<IOpportunity> {
+  async putOnHold(
+    id: string,
+    dto: PutOnHoldDto,
+    userId: string,
+    organizationId: string,
+  ): Promise<IOpportunity> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
-    const prev = await OpportunityModel.findById(id);
+    const prev = await OpportunityModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Opportunity not found');
     if ([OpportunityStatus.WON, OpportunityStatus.LOST, OpportunityStatus.ON_HOLD].includes(prev.status)) {
       throw new AppError(400, 'Opportunity cannot be put on hold in its current status');
@@ -1326,13 +1387,14 @@ export class OpportunityService {
     prev.heldAt = new Date();
     prev.heldBy = new Types.ObjectId(userId);
     await prev.save();
-    await followUpService.clearFollowUp('opportunity', id);
+    await followUpService.clearFollowUp('opportunity', id, organizationId);
 
     await activityService.logSystem(
       'opportunity',
       prev._id as Types.ObjectId,
       ActivityType.ON_HOLD,
       'Opportunity put on hold',
+      organizationId,
       {
         description: dto.holdNotes ?? undefined,
         metadata: { holdReason: dto.holdReason, holdUntil: prev.holdUntil },
@@ -1342,9 +1404,9 @@ export class OpportunityService {
     return prev;
   }
 
-  async resume(id: string, dto: ResumeDto, userId: string): Promise<IOpportunity> {
+  async resume(id: string, dto: ResumeDto, userId: string, organizationId: string): Promise<IOpportunity> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
-    const prev = await OpportunityModel.findById(id);
+    const prev = await OpportunityModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Opportunity not found');
     if (prev.status !== OpportunityStatus.ON_HOLD) throw new AppError(400, 'Opportunity is not on hold');
 
@@ -1362,7 +1424,13 @@ export class OpportunityService {
 
     if (dto.followUpDate) {
       const mode = (dto.followUpMode ?? FollowUpMode.PHONE) as FollowUpMode;
-      await followUpService.syncFromActivity('opportunity', id, new Date(dto.followUpDate), mode);
+      await followUpService.syncFromActivity(
+        'opportunity',
+        id,
+        new Date(dto.followUpDate),
+        organizationId,
+        mode,
+      );
     }
 
     await activityService.logSystem(
@@ -1370,17 +1438,22 @@ export class OpportunityService {
       prev._id as Types.ObjectId,
       ActivityType.RESUMED,
       'Opportunity resumed from hold',
+      organizationId,
       { description: dto.note ?? undefined },
       userId,
     );
     return prev;
   }
 
-  async snooze(id: string, dto: SnoozeDto, _userId: string): Promise<IOpportunity> {
+  async snooze(id: string, dto: SnoozeDto, _userId: string, organizationId: string): Promise<IOpportunity> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid opportunity id');
     const until = new Date();
     until.setDate(until.getDate() + dto.days);
-    const prev = await OpportunityModel.findByIdAndUpdate(id, { alertSnoozedUntil: until }, { new: true });
+    const prev = await OpportunityModel.findOneAndUpdate(
+      { _id: id, ...orgFilter(organizationId) },
+      { alertSnoozedUntil: until },
+      { new: true },
+    );
     if (!prev) throw new AppError(404, 'Opportunity not found');
     return prev;
   }

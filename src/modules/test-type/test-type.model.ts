@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IHeaderField {
   key: string;
@@ -45,6 +45,7 @@ export interface ITestType extends Document {
   showGraph?: boolean;
   dueDateDays?: number;
   isActive: boolean;
+  organizationId?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -104,6 +105,7 @@ const testTypeSchema = new Schema<ITestType>(
     showGraph: { type: Boolean, default: true },
     dueDateDays: { type: Number },
     isActive: { type: Boolean, default: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
   },
   {
     timestamps: true,

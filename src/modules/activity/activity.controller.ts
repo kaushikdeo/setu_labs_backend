@@ -9,7 +9,7 @@ export class ActivityController {
       const entityType = req.query.entityType as ActivityEntityType;
       const entityId = req.query.entityId as string;
       const type = (req.query.type as ActivityType | undefined) || undefined;
-      const data = await activityService.list(entityType, entityId, type);
+      const data = await activityService.list(entityType, entityId, req.user!.organizationId!, type);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -19,7 +19,8 @@ export class ActivityController {
   create = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = req.user!.id;
-      const activity = await activityService.add(req.body, userId);
+      const organizationId = req.user!.organizationId!;
+      const activity = await activityService.add(req.body, userId, organizationId);
 
       if (activity.type === ActivityType.FOLLOW_UP) {
         const meta = activity.metadata as Record<string, unknown> | undefined;
@@ -28,6 +29,7 @@ export class ActivityController {
           activity.entityType,
           activity.entityId,
           activity.occurredAt,
+          organizationId,
           mode,
         );
       } else if (
@@ -35,7 +37,7 @@ export class ActivityController {
         activity.entityType === 'prospect' ||
         activity.entityType === 'opportunity'
       ) {
-        await followUpService.touchLastActivity(activity.entityType, activity.entityId);
+        await followUpService.touchLastActivity(activity.entityType, activity.entityId, organizationId);
       }
 
       res.status(201).json({ success: true, data: activity });
@@ -46,7 +48,7 @@ export class ActivityController {
 
   remove = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await activityService.remove(req.params.id);
+      await activityService.remove(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, message: 'Activity deleted' });
     } catch (err) {
       next(err);

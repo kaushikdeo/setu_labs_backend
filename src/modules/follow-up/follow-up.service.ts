@@ -5,6 +5,7 @@ import { FollowUpMode, ILead, LeadModel, LeadStatus } from '../lead/lead.model';
 import { IProspect, ProspectModel, ProspectStatus } from '../prospect/prospect.model';
 import { IOpportunity, OpportunityModel, OpportunityStatus } from '../opportunity/opportunity.model';
 import { AppError } from '../../utils/app-error';
+import { orgFilter } from '../../utils/tenant';
 
 export type FollowUpEntityType = Extract<ActivityEntityType, 'lead' | 'prospect' | 'opportunity'>;
 export type FollowUpEntityFilter = FollowUpEntityType | 'all';
@@ -61,27 +62,30 @@ function getModel(entityType: FollowUpEntityType) {
 async function updateEntity(
   entityType: FollowUpEntityType,
   id: string,
+  organizationId: string,
   update: Record<string, unknown>,
   options?: { new?: boolean },
 ) {
+  const filter = { _id: id, ...orgFilter(organizationId) };
   switch (entityType) {
     case 'lead':
-      return LeadModel.findByIdAndUpdate(id, update, options);
+      return LeadModel.findOneAndUpdate(filter, update, options);
     case 'prospect':
-      return ProspectModel.findByIdAndUpdate(id, update, options);
+      return ProspectModel.findOneAndUpdate(filter, update, options);
     case 'opportunity':
-      return OpportunityModel.findByIdAndUpdate(id, update, options);
+      return OpportunityModel.findOneAndUpdate(filter, update, options);
   }
 }
 
-async function findEntity(entityType: FollowUpEntityType, id: string) {
+async function findEntity(entityType: FollowUpEntityType, id: string, organizationId: string) {
+  const filter = { _id: id, ...orgFilter(organizationId) };
   switch (entityType) {
     case 'lead':
-      return LeadModel.findById(id);
+      return LeadModel.findOne(filter);
     case 'prospect':
-      return ProspectModel.findById(id);
+      return ProspectModel.findOne(filter);
     case 'opportunity':
-      return OpportunityModel.findById(id);
+      return OpportunityModel.findOne(filter);
   }
 }
 
@@ -158,6 +162,7 @@ class FollowUpService {
   async listOpen(
     entityType: FollowUpEntityFilter,
     callerUserId: string,
+    organizationId: string,
     scope?: 'mine' | 'all',
   ) {
     const types: FollowUpEntityType[] =
@@ -175,6 +180,7 @@ class FollowUpService {
     for (const type of types) {
       const cfg = this.meta(type);
       const match: Record<string, unknown> = {
+        ...orgFilter(organizationId),
         ...cfg.openMatch,
         [cfg.dateField]: { $ne: null },
       };
@@ -221,6 +227,7 @@ class FollowUpService {
     entityType: ActivityEntityType,
     entityId: string | Types.ObjectId,
     occurredAt: Date,
+    organizationId: string,
     mode?: string,
   ): Promise<void> {
     if (entityType !== 'lead' && entityType !== 'prospect' && entityType !== 'opportunity') {
@@ -238,24 +245,33 @@ class FollowUpService {
     if (!isFuture) {
       update.lastActivityAt = new Date();
     }
-    await updateEntity(entityType, id, update);
+    await updateEntity(entityType, id, organizationId, update);
   }
 
-  async touchLastActivity(entityType: ActivityEntityType, entityId: string | Types.ObjectId): Promise<void> {
+  async touchLastActivity(
+    entityType: ActivityEntityType,
+    entityId: string | Types.ObjectId,
+    organizationId: string,
+  ): Promise<void> {
     if (entityType !== 'lead' && entityType !== 'prospect' && entityType !== 'opportunity') {
       return;
     }
     const id = String(entityId);
     if (!Types.ObjectId.isValid(id)) return;
-    await updateEntity(entityType, id, { lastActivityAt: new Date() });
+    await updateEntity(entityType, id, organizationId, { lastActivityAt: new Date() });
   }
 
-  async clearFollowUp(entityType: FollowUpEntityType, id: string): Promise<EntityDoc> {
+  async clearFollowUp(
+    entityType: FollowUpEntityType,
+    id: string,
+    organizationId: string,
+  ): Promise<EntityDoc> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, `Invalid ${entityType} id`);
     const cfg = this.meta(entityType);
     const updated = await updateEntity(
       entityType,
       id,
+      organizationId,
       { [cfg.dateField]: null, [cfg.modeField]: null },
       { new: true },
     );
@@ -268,10 +284,11 @@ class FollowUpService {
     id: string,
     dto: CompleteFollowUpDto,
     userId: string,
+    organizationId: string,
   ) {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, `Invalid ${entityType} id`);
     const cfg = this.meta(entityType);
-    const doc = await findEntity(entityType, id);
+    const doc = await findEntity(entityType, id, organizationId);
     if (!doc) throw new AppError(404, cfg.notFoundLabel);
 
     const now = new Date();
@@ -279,6 +296,7 @@ class FollowUpService {
     const followUpDate = getFollowUpDate(doc, entityType);
 
     const openFilter: Record<string, unknown> = {
+      ...orgFilter(organizationId),
       entityType,
       entityId: eid,
       type: ActivityType.FOLLOW_UP,
@@ -321,6 +339,7 @@ class FollowUpService {
           : undefined,
       },
       userId,
+      organizationId,
     );
 
     let scheduledId: string | null = null;
@@ -336,22 +355,23 @@ class FollowUpService {
           metadata: { mode: dto.reschedule.mode },
         },
         userId,
+        organizationId,
       );
       scheduledId = String(scheduled._id);
-      await updateEntity(entityType, String(eid), {
+      await updateEntity(entityType, String(eid), organizationId, {
         [cfg.dateField]: scheduled.occurredAt,
         [cfg.modeField]: dto.reschedule.mode,
         lastActivityAt: now,
       });
     } else {
-      await updateEntity(entityType, String(eid), {
+      await updateEntity(entityType, String(eid), organizationId, {
         [cfg.dateField]: null,
         [cfg.modeField]: null,
         lastActivityAt: now,
       });
     }
 
-    const fresh = await findEntity(entityType, id);
+    const fresh = await findEntity(entityType, id, organizationId);
     return {
       entity: fresh as EntityDoc,
       entityType,
@@ -365,6 +385,7 @@ class FollowUpService {
     entityType: FollowUpEntityFilter,
     days: number,
     callerUserId: string,
+    organizationId: string,
     scope?: 'mine' | 'all',
   ) {
     const since = new Date(Date.now() - Math.max(1, days) * 86400000);
@@ -385,6 +406,7 @@ class FollowUpService {
       const pipeline: MongoPipelineStage[] = [
         {
           $match: {
+            ...orgFilter(organizationId),
             entityType: type,
             type: ActivityType.FOLLOW_UP,
             'metadata.completedAt': { $ne: null, $exists: true, $gte: since },
@@ -399,9 +421,14 @@ class FollowUpService {
           },
         },
         { $unwind: '$entity' },
-        ...(Object.keys(entityMatch).length
-          ? [{ $match: { 'entity.assignedUserId': entityMatch.assignedUserId } }]
-          : []),
+        {
+          $match: {
+            'entity.organizationId': orgFilter(organizationId).organizationId,
+            ...(Object.keys(entityMatch).length
+              ? { 'entity.assignedUserId': entityMatch.assignedUserId }
+              : {}),
+          },
+        },
         {
           $lookup: {
             from: 'users',
@@ -484,6 +511,7 @@ class FollowUpService {
     followUpDate: Date | null | undefined,
     followUpMode: FollowUpMode | null | undefined,
     userId: string,
+    organizationId: string,
   ): Promise<void> {
     if (!followUpDate) return;
     await activityService.add(
@@ -496,8 +524,9 @@ class FollowUpService {
         metadata: followUpMode ? { mode: followUpMode } : undefined,
       },
       userId,
+      organizationId,
     );
-    await this.syncFromActivity(entityType, id, new Date(followUpDate), followUpMode ?? undefined);
+    await this.syncFromActivity(entityType, id, new Date(followUpDate), organizationId, followUpMode ?? undefined);
   }
 }
 

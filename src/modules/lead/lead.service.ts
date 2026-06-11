@@ -6,6 +6,7 @@ import { followUpService } from '../follow-up/follow-up.service';
 import { activityService } from '../activity/activity.service';
 import { ActivityType } from '../activity/activity.model';
 import { AppError } from '../../utils/app-error';
+import { orgFilter } from '../../utils/tenant';
 import { logger } from '../../config/logger';
 import { computeHealth, staleCutoffFor } from '../crm-health/compute-health';
 import { enrichWithHealth } from '../crm-health/enrich-health';
@@ -106,8 +107,12 @@ function buildSortStage(sort?: string): Record<string, 1 | -1> {
 }
 
 export class LeadService {
-  async list(filters: ListLeadsFilters, callerUserId: string): Promise<ListLeadsResult> {
-    const match: Record<string, unknown> = {};
+  async list(
+    filters: ListLeadsFilters,
+    callerUserId: string,
+    organizationId: string,
+  ): Promise<ListLeadsResult> {
+    const match: Record<string, unknown> = { ...orgFilter(organizationId) };
 
     if (filters.scope === 'mine') {
       match.assignedUserId = new Types.ObjectId(callerUserId);
@@ -290,10 +295,10 @@ export class LeadService {
     return { data, page, limit, total };
   }
 
-  async getById(id: string): Promise<unknown> {
+  async getById(id: string, organizationId: string): Promise<unknown> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
     const docs = await LeadModel.aggregate([
-      { $match: { _id: new Types.ObjectId(id) } },
+      { $match: { _id: new Types.ObjectId(id), ...orgFilter(organizationId) } },
       {
         $lookup: {
           from: 'users',
@@ -368,16 +373,17 @@ export class LeadService {
     return enrichWithHealth(docs[0] as Record<string, unknown>, 'lead');
   }
 
-  async create(data: Partial<ILead>, userId: string): Promise<ILead> {
+  async create(data: Partial<ILead>, userId: string, organizationId: string): Promise<ILead> {
     if (!data.assignedUserId) throw new AppError(400, 'assignedUserId is required');
 
-    const seq = await srCounterService.nextSequence('lead');
+    const seq = await srCounterService.nextSequence(`${organizationId}:lead`);
     const code = `LD-${pad(seq)}`;
 
     const now = new Date();
     const lead = await LeadModel.create({
       ...normalizePayload(data),
       code,
+      organizationId: orgFilter(organizationId).organizationId,
       createdBy: userId,
       lastActivityAt: now,
     });
@@ -385,9 +391,14 @@ export class LeadService {
     return lead;
   }
 
-  async update(id: string, data: Partial<ILead>, userId: string): Promise<ILead> {
+  async update(
+    id: string,
+    data: Partial<ILead>,
+    userId: string,
+    organizationId: string,
+  ): Promise<ILead> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
-    const prev = await LeadModel.findById(id);
+    const prev = await LeadModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!prev) throw new AppError(404, 'Lead not found');
 
     const {
@@ -401,8 +412,8 @@ export class LeadService {
       ...updateData
     } = data as Record<string, unknown>;
 
-    const lead = await LeadModel.findByIdAndUpdate(
-      id,
+    const lead = await LeadModel.findOneAndUpdate(
+      { _id: id, ...orgFilter(organizationId) },
       { ...normalizePayload(updateData as Partial<ILead>), lastActivityAt: new Date() },
       { new: true, runValidators: true },
     );
@@ -413,7 +424,7 @@ export class LeadService {
       const prevTime = prev.followUpDate?.getTime();
       const newTime = newDate ? new Date(newDate).getTime() : undefined;
       if (!newDate) {
-        await followUpService.clearFollowUp('lead', id);
+        await followUpService.clearFollowUp('lead', id, organizationId);
       } else if (newTime !== prevTime) {
         const mode = (updateData.followUpMode ?? lead.followUpMode ?? FollowUpMode.PHONE) as FollowUpMode;
         await activityService.add(
@@ -426,8 +437,9 @@ export class LeadService {
             metadata: { mode },
           },
           userId,
+          organizationId,
         );
-        await followUpService.syncFromActivity('lead', id, new Date(newDate), mode);
+        await followUpService.syncFromActivity('lead', id, new Date(newDate), organizationId, mode);
       }
     }
 
@@ -435,14 +447,15 @@ export class LeadService {
     return lead;
   }
 
-  async remove(id: string, userId: string): Promise<void> {
+  async remove(id: string, userId: string, organizationId: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
-    const result = await LeadModel.findByIdAndDelete(id);
+    const result = await LeadModel.findOneAndDelete({ _id: id, ...orgFilter(organizationId) });
     if (!result) throw new AppError(404, 'Lead not found');
     logger.info('Lead deleted', { leadId: id, deletedBy: userId });
   }
 
-  async stats(): Promise<LeadStatsResult> {
+  async stats(organizationId: string): Promise<LeadStatsResult> {
+    const org = orgFilter(organizationId);
     const mtdStart = new Date();
     mtdStart.setDate(1);
     mtdStart.setHours(0, 0, 0, 0);
@@ -452,6 +465,7 @@ export class LeadService {
     const cutoff = staleCutoff();
 
     const [agg] = await LeadModel.aggregate([
+      { $match: org },
       {
         $facet: {
           totalMTD: [{ $match: { createdAt: { $gte: mtdStart } } }, { $count: 'count' }],
@@ -520,7 +534,7 @@ export class LeadService {
     const converted = (agg?.converted?.[0]?.count ?? 0) as number;
     const avgRaw = (agg?.avgResponse?.[0]?.avg ?? null) as number | null;
 
-    const activeLeads = await LeadModel.find({ status: ACTIVE_LEAD_STATUSES }).lean();
+    const activeLeads = await LeadModel.find({ status: ACTIVE_LEAD_STATUSES, ...org }).lean();
     let atRiskCount = 0;
     let criticalCount = 0;
     for (const lead of activeLeads) {
@@ -550,9 +564,14 @@ export class LeadService {
     };
   }
 
-  async putOnHold(id: string, dto: PutOnHoldDto, userId: string): Promise<ILead> {
+  async putOnHold(
+    id: string,
+    dto: PutOnHoldDto,
+    userId: string,
+    organizationId: string,
+  ): Promise<ILead> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
-    const lead = await LeadModel.findById(id);
+    const lead = await LeadModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!lead) throw new AppError(404, 'Lead not found');
     if ([LeadStatus.CONVERTED, LeadStatus.NOT_INTERESTED, LeadStatus.ON_HOLD].includes(lead.status)) {
       throw new AppError(400, 'Lead cannot be put on hold in its current status');
@@ -566,13 +585,14 @@ export class LeadService {
     lead.heldAt = new Date();
     lead.heldBy = new Types.ObjectId(userId);
     await lead.save();
-    await followUpService.clearFollowUp('lead', id);
+    await followUpService.clearFollowUp('lead', id, organizationId);
 
     await activityService.logSystem(
       'lead',
       lead._id as Types.ObjectId,
       ActivityType.ON_HOLD,
       'Lead put on hold',
+      organizationId,
       {
         description: dto.holdNotes ?? undefined,
         metadata: { holdReason: dto.holdReason, holdUntil: lead.holdUntil },
@@ -582,9 +602,9 @@ export class LeadService {
     return lead;
   }
 
-  async resume(id: string, dto: ResumeDto, userId: string): Promise<ILead> {
+  async resume(id: string, dto: ResumeDto, userId: string, organizationId: string): Promise<ILead> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
-    const lead = await LeadModel.findById(id);
+    const lead = await LeadModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!lead) throw new AppError(404, 'Lead not found');
     if (lead.status !== LeadStatus.ON_HOLD) throw new AppError(400, 'Lead is not on hold');
 
@@ -614,8 +634,15 @@ export class LeadService {
           metadata: { mode },
         },
         userId,
+        organizationId,
       );
-      await followUpService.syncFromActivity('lead', id, new Date(dto.followUpDate), mode);
+      await followUpService.syncFromActivity(
+        'lead',
+        id,
+        new Date(dto.followUpDate),
+        organizationId,
+        mode,
+      );
     }
 
     await activityService.logSystem(
@@ -623,27 +650,33 @@ export class LeadService {
       lead._id as Types.ObjectId,
       ActivityType.RESUMED,
       'Lead resumed from hold',
+      organizationId,
       { description: dto.note ?? undefined },
       userId,
     );
     return lead;
   }
 
-  async snooze(id: string, dto: SnoozeDto, _userId: string): Promise<ILead> {
+  async snooze(id: string, dto: SnoozeDto, _userId: string, organizationId: string): Promise<ILead> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid lead id');
     const until = new Date();
     until.setDate(until.getDate() + dto.days);
-    const lead = await LeadModel.findByIdAndUpdate(id, { alertSnoozedUntil: until }, { new: true });
+    const lead = await LeadModel.findOneAndUpdate(
+      { _id: id, ...orgFilter(organizationId) },
+      { alertSnoozedUntil: until },
+      { new: true },
+    );
     if (!lead) throw new AppError(404, 'Lead not found');
     return lead;
   }
 
   // Segments
 
-  async listSegments(callerUserId: string): Promise<unknown[]> {
+  async listSegments(callerUserId: string, organizationId: string): Promise<unknown[]> {
     const docs = await LeadSegmentModel.aggregate([
       {
         $match: {
+          ...orgFilter(organizationId),
           $or: [{ ownerId: new Types.ObjectId(callerUserId) }, { isShared: true }],
         },
       },
@@ -681,12 +714,14 @@ export class LeadService {
   async createSegment(
     data: { name: string; filters: Record<string, unknown>; isShared?: boolean },
     userId: string,
+    organizationId: string,
   ): Promise<ILeadSegment> {
     const segment = await LeadSegmentModel.create({
       name: data.name,
       filters: data.filters ?? {},
       isShared: data.isShared ?? false,
       ownerId: new Types.ObjectId(userId),
+      organizationId: orgFilter(organizationId).organizationId,
       createdBy: userId,
     });
     return segment;
@@ -696,9 +731,10 @@ export class LeadService {
     id: string,
     data: Partial<{ name: string; filters: Record<string, unknown>; isShared: boolean }>,
     userId: string,
+    organizationId: string,
   ): Promise<ILeadSegment> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid segment id');
-    const segment = await LeadSegmentModel.findById(id);
+    const segment = await LeadSegmentModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!segment) throw new AppError(404, 'Segment not found');
     if (segment.ownerId.toString() !== userId) {
       throw new AppError(403, 'Only the owner can update this segment');
@@ -708,9 +744,9 @@ export class LeadService {
     return segment;
   }
 
-  async removeSegment(id: string, userId: string): Promise<void> {
+  async removeSegment(id: string, userId: string, organizationId: string): Promise<void> {
     if (!Types.ObjectId.isValid(id)) throw new AppError(400, 'Invalid segment id');
-    const segment = await LeadSegmentModel.findById(id);
+    const segment = await LeadSegmentModel.findOne({ _id: id, ...orgFilter(organizationId) });
     if (!segment) throw new AppError(404, 'Segment not found');
     if (segment.ownerId.toString() !== userId) {
       throw new AppError(403, 'Only the owner can delete this segment');

@@ -7,7 +7,7 @@ const visitService = new VisitService();
 export class VisitController {
   getAllVisits = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const visits = await visitService.getAllVisits(req.query);
+      const visits = await visitService.getAllVisits(req.query, req.user!.organizationId!);
       res.status(200).json({ success: true, data: visits });
     } catch (error) {
       next(error);
@@ -16,8 +16,9 @@ export class VisitController {
 
   getVisitById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const visit = await visitService.getVisitById(req.params.id);
-      const tasks = await visitService.getTasksByVisit(req.params.id);
+      const organizationId = req.user!.organizationId!;
+      const visit = await visitService.getVisitById(req.params.id, organizationId);
+      const tasks = await visitService.getTasksByVisit(req.params.id, organizationId);
       res.status(200).json({ success: true, data: { ...visit, tasks } });
     } catch (error) {
       next(error);
@@ -26,7 +27,7 @@ export class VisitController {
 
   createVisit = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const visit = await visitService.createVisit(req.body, req.user!.id);
+      const visit = await visitService.createVisit(req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('visit.create', req, req.user!.id, {
         visitId: visit._id,
         code: visit.code,
@@ -39,7 +40,7 @@ export class VisitController {
 
   updateVisit = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const visit = await visitService.updateVisit(req.params.id, req.body, req.user!.id);
+      const visit = await visitService.updateVisit(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('visit.update', req, req.user!.id, {
         visitId: req.params.id,
         updatedFields: Object.keys(req.body),
@@ -52,7 +53,7 @@ export class VisitController {
 
   deleteVisit = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await visitService.deleteVisit(req.params.id, req.user!.id);
+      await visitService.deleteVisit(req.params.id, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('visit.delete', req, req.user!.id, {
         visitId: req.params.id,
       });
@@ -64,7 +65,7 @@ export class VisitController {
 
   getTasksByVisit = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const tasks = await visitService.getTasksByVisit(req.params.id);
+      const tasks = await visitService.getTasksByVisit(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: tasks });
     } catch (error) {
       next(error);
@@ -73,7 +74,7 @@ export class VisitController {
 
   addTask = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const task = await visitService.addTask(req.params.id, req.body, req.user!.id);
+      const task = await visitService.addTask(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       res.status(201).json({ success: true, data: task });
     } catch (error) {
       next(error);
@@ -82,7 +83,7 @@ export class VisitController {
 
   updateTask = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const task = await visitService.updateTask(req.params.id, req.params.taskId, req.body, req.user!.id);
+      const task = await visitService.updateTask(req.params.id, req.params.taskId, req.body, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: task });
     } catch (error) {
       next(error);
@@ -95,6 +96,7 @@ export class VisitController {
         req.params.id,
         req.body.validationDate,
         req.user!.id,
+        req.user!.organizationId!,
         req.body.dueDate,
       );
       await auditService.logEvent('visit.start', req, req.user!.id, {
@@ -110,7 +112,7 @@ export class VisitController {
 
   startTask = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const task = await visitService.startTask(req.params.id, req.params.taskId, req.body, req.user!.id);
+      const task = await visitService.startTask(req.params.id, req.params.taskId, req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('visit.task.start', req, req.user!.id, {
         visitId: req.params.id,
         taskId: req.params.taskId,
@@ -123,7 +125,7 @@ export class VisitController {
 
   completeTask = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const task = await visitService.completeTask(req.params.id, req.params.taskId, req.body, req.user!.id);
+      const task = await visitService.completeTask(req.params.id, req.params.taskId, req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('visit.task.complete', req, req.user!.id, {
         visitId: req.params.id,
         taskId: req.params.taskId,

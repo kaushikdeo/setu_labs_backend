@@ -76,5 +76,6 @@ const notificationSchema = new Schema<INotification>(
 );
 
 notificationSchema.index({ recipientUserId: 1, readAt: 1, createdAt: -1 });
+notificationSchema.index({ organizationId: 1 });
 
 export const NotificationModel = model<INotification>('Notification', notificationSchema);

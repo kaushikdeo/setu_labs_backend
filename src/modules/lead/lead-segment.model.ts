@@ -5,6 +5,7 @@ export interface ILeadSegment extends Document {
   ownerId: Types.ObjectId;
   filters: Record<string, unknown>;
   isShared: boolean;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -16,6 +17,7 @@ const leadSegmentSchema = new Schema<ILeadSegment>(
     ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     filters: { type: Schema.Types.Mixed, default: {} },
     isShared: { type: Boolean, default: false },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

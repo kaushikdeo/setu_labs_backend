@@ -13,10 +13,12 @@ function fireAudit(fn: () => Promise<any>): void {
 export class ReportController {
   createReport = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const report = await reportService.createReport(req.body.visitId, req.user!.id);
+      const organizationId = req.user!.organizationId!;
+      const report = await reportService.createReport(req.body.visitId, req.user!.id, organizationId);
       const enriched = await reportService.getReportById(
         report._id.toString(),
         req.user!.role,
+        organizationId,
         req.user!.customerId,
       );
       res.status(201).json({ success: true, data: enriched });
@@ -34,6 +36,7 @@ export class ReportController {
       const reports = await reportService.getAllReports(
         req.user!.role,
         req.user!.id,
+        req.user!.organizationId!,
         req.user!.customerId,
         req.query,
       );
@@ -48,6 +51,7 @@ export class ReportController {
       const report = await reportService.getReportById(
         req.params.id,
         req.user!.role,
+        req.user!.organizationId!,
         req.user!.customerId,
       );
       res.status(200).json({ success: true, data: report });
@@ -61,6 +65,7 @@ export class ReportController {
       const report = await reportService.submitForApproval(
         req.params.id,
         req.user!.id,
+        req.user!.organizationId!,
         req.body.comment,
       );
       res.status(200).json({ success: true, data: report });
@@ -79,6 +84,7 @@ export class ReportController {
         req.params.id,
         req.user!.id,
         req.user!.customerId,
+        req.user!.organizationId!,
         req.body.comment,
       );
       res.status(200).json({ success: true, data: report });
@@ -97,6 +103,7 @@ export class ReportController {
         req.params.id,
         req.user!.id,
         req.user!.customerId,
+        req.user!.organizationId!,
         req.body.comment,
       );
       res.status(200).json({ success: true, data: report });
@@ -108,7 +115,7 @@ export class ReportController {
 
   getReportByVisitId = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const report = await reportService.getReportByVisitId(req.params.visitId);
+      const report = await reportService.getReportByVisitId(req.params.visitId, req.user!.organizationId!);
       res.status(200).json({ success: true, data: report ?? null });
     } catch (error) {
       next(error);
@@ -121,6 +128,7 @@ export class ReportController {
         req.params.id,
         req.user!.id,
         req.user!.role,
+        req.user!.organizationId!,
         req.user!.customerId,
         req.body.comment,
       );
@@ -139,6 +147,7 @@ export class ReportController {
       const results = await reportService.getAllResultsForDownload(
         req.params.id,
         req.user!.role,
+        req.user!.organizationId!,
         req.user!.customerId,
       );
       res.status(200).json({ success: true, data: results });
@@ -153,6 +162,7 @@ export class ReportController {
         req.params.id,
         req.params.resultId,
         req.user!.role,
+        req.user!.organizationId!,
         req.user!.customerId,
       );
       res.status(200).json({ success: true, data: result });

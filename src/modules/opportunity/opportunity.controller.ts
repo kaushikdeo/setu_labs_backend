@@ -27,16 +27,20 @@ function parseFilters(query: Request['query']): ListOpportunitiesFilters {
 export class OpportunityController {
   list = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.list(parseFilters(req.query), req.user!.id);
+      const data = await opportunityService.list(
+        parseFilters(req.query),
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }
   };
 
-  stats = async (_req: Request, res: Response, next: NextFunction) => {
+  stats = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.stats();
+      const data = await opportunityService.stats(req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -45,34 +49,38 @@ export class OpportunityController {
 
   kanban = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.kanban(parseFilters(req.query), req.user!.id);
+      const data = await opportunityService.kanban(
+        parseFilters(req.query),
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }
   };
 
-  forecast = async (_req: Request, res: Response, next: NextFunction) => {
+  forecast = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.forecast();
+      const data = await opportunityService.forecast(req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }
   };
 
-  stale = async (_req: Request, res: Response, next: NextFunction) => {
+  stale = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.staleList();
+      const data = await opportunityService.staleList(req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }
   };
 
-  winLoss = async (_req: Request, res: Response, next: NextFunction) => {
+  winLoss = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.winLoss();
+      const data = await opportunityService.winLoss(req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -81,7 +89,7 @@ export class OpportunityController {
 
   getById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.getById(req.params.id);
+      const data = await opportunityService.getById(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -90,7 +98,10 @@ export class OpportunityController {
 
   getByProspectId = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.findByProspectId(req.params.prospectId);
+      const data = await opportunityService.findByProspectId(
+        req.params.prospectId,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -102,7 +113,8 @@ export class OpportunityController {
       const data = await opportunityService.convertFromProspect(
         req.params.prospectId,
         req.body,
-        req.user!.id
+        req.user!.id,
+        req.user!.organizationId!,
       );
       res.status(201).json({ success: true, data });
     } catch (err) {
@@ -112,7 +124,11 @@ export class OpportunityController {
 
   createStandalone = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.createStandalone(req.body, req.user!.id);
+      const data = await opportunityService.createStandalone(
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(201).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -121,7 +137,12 @@ export class OpportunityController {
 
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.update(req.params.id, req.body, req.user!.id);
+      const data = await opportunityService.update(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -130,7 +151,12 @@ export class OpportunityController {
 
   changeStage = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.changeStage(req.params.id, req.body, req.user!.id);
+      const data = await opportunityService.changeStage(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -139,7 +165,12 @@ export class OpportunityController {
 
   markWon = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.markWon(req.params.id, req.body, req.user!.id);
+      const data = await opportunityService.markWon(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -148,7 +179,12 @@ export class OpportunityController {
 
   markLost = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.markLost(req.params.id, req.body, req.user!.id);
+      const data = await opportunityService.markLost(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -157,7 +193,12 @@ export class OpportunityController {
 
   putOnHold = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.putOnHold(req.params.id, req.body, req.user!.id);
+      const data = await opportunityService.putOnHold(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -166,7 +207,12 @@ export class OpportunityController {
 
   resume = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.resume(req.params.id, req.body, req.user!.id);
+      const data = await opportunityService.resume(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -175,7 +221,12 @@ export class OpportunityController {
 
   snooze = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await opportunityService.snooze(req.params.id, req.body, req.user!.id);
+      const data = await opportunityService.snooze(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -184,7 +235,7 @@ export class OpportunityController {
 
   remove = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await opportunityService.remove(req.params.id, req.user!.id);
+      await opportunityService.remove(req.params.id, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, message: 'Opportunity deleted' });
     } catch (err) {
       next(err);
@@ -193,7 +244,11 @@ export class OpportunityController {
 
   clearFollowUp = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await followUpService.clearFollowUp('opportunity', req.params.id);
+      const data = await followUpService.clearFollowUp(
+        'opportunity',
+        req.params.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -216,6 +271,7 @@ export class OpportunityController {
         req.params.id,
         { ...req.body, doneAs },
         req.user!.id,
+        req.user!.organizationId!,
       );
       res.status(200).json({ success: true, data });
     } catch (err) {

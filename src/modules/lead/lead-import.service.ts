@@ -20,6 +20,7 @@ import { ILead, LeadModel } from './lead.model';
 import { UserModel } from '../user/user.model';
 import { srCounterService } from '../sr-counter/sr-counter.service';
 import { AppError } from '../../utils/app-error';
+import { orgFilter } from '../../utils/tenant';
 import { logger } from '../../config/logger';
 
 const NULLABLE_ENUM_FIELDS = [
@@ -199,6 +200,7 @@ export class LeadImportService {
   async validate(
     buffer: Buffer,
     defaults: ImportDefaults,
+    organizationId: string,
   ): Promise<ImportValidateResult> {
     purgeExpiredCache();
 
@@ -391,7 +393,10 @@ export class LeadImportService {
         ...new Set(parsedRows.map((r) => r.cells.mobile).filter(Boolean)),
         ...fileMobiles,
       ];
-      const existing = await LeadModel.find({ mobile: { $in: lookupMobiles } })
+      const existing = await LeadModel.find({
+        mobile: { $in: lookupMobiles },
+        ...orgFilter(organizationId),
+      })
         .select('mobile code')
         .lean();
       const existingByNorm = new Map(
@@ -439,7 +444,7 @@ export class LeadImportService {
     };
   }
 
-  async commit(importId: string, userId: string): Promise<ImportCommitResult> {
+  async commit(importId: string, userId: string, organizationId: string): Promise<ImportCommitResult> {
     purgeExpiredCache();
     const cached = importCache.get(importId);
     if (!cached) throw new AppError(400, 'Import session expired or not found. Validate again.');
@@ -453,7 +458,7 @@ export class LeadImportService {
       for (let i = 0; i < cached.rows.length; i++) {
         const data = cached.rows[i];
         const rowNumber = cached.rowNumbers[i];
-        const seq = await srCounterService.nextSequence('lead');
+        const seq = await srCounterService.nextSequence(`${organizationId}:lead`);
         const code = `LD-${pad(seq)}`;
         const now = new Date();
 
@@ -462,6 +467,7 @@ export class LeadImportService {
             {
               ...data,
               code,
+              organizationId: orgFilter(organizationId).organizationId,
               createdBy: userId,
               lastActivityAt: now,
             },

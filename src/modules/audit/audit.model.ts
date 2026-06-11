@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export type AuditAction =
   | 'auth.register'
@@ -30,6 +30,7 @@ export type AuditAction =
   | 'report.request_changes';
 
 export interface IAuditLog extends Document {
+  organizationId?: Types.ObjectId | null;
   userId: string | null;
   action: AuditAction;
   ip: string;
@@ -40,6 +41,7 @@ export interface IAuditLog extends Document {
 
 const auditLogSchema = new Schema<IAuditLog>(
   {
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     userId: { type: String, default: null },
     action: { type: String, required: true },
     ip: { type: String, required: true },

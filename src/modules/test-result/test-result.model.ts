@@ -23,6 +23,7 @@ export interface ITaskTestResult extends Document {
   calculatedValues: Record<string, any>;
   result: 'Pass' | 'Fail';
   conclusion: string;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   completedAt: Date;
   createdAt: Date;
@@ -56,6 +57,7 @@ const testResultSchema = new Schema<ITaskTestResult>(
     calculatedValues: { type: Schema.Types.Mixed, default: {} },
     result: { type: String, enum: ['Pass', 'Fail'], required: true },
     conclusion: { type: String, required: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
     completedAt: { type: Date, required: true },
   },

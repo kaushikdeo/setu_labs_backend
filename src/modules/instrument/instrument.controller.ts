@@ -7,7 +7,7 @@ const instrumentService = new InstrumentService();
 export class InstrumentController {
   createInstrument = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const instrument = await instrumentService.createInstrument(req.body, req.user!.id);
+      const instrument = await instrumentService.createInstrument(req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('instrument.create', req, req.user!.id, {
         instrumentId: instrument._id,
         name: instrument.name,
@@ -18,9 +18,9 @@ export class InstrumentController {
     }
   };
 
-  getAllInstruments = async (_req: Request, res: Response, next: NextFunction) => {
+  getAllInstruments = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const instruments = await instrumentService.getAllInstruments();
+      const instruments = await instrumentService.getAllInstruments(req.user!.organizationId!);
       res.status(200).json({ success: true, data: instruments });
     } catch (error) {
       next(error);
@@ -29,7 +29,7 @@ export class InstrumentController {
 
   getInstrumentById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const instrument = await instrumentService.getInstrumentById(req.params.id);
+      const instrument = await instrumentService.getInstrumentById(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: instrument });
     } catch (error) {
       next(error);
@@ -38,7 +38,7 @@ export class InstrumentController {
 
   updateInstrument = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const instrument = await instrumentService.updateInstrument(req.params.id, req.body, req.user!.id);
+      const instrument = await instrumentService.updateInstrument(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       await auditService.logEvent('instrument.update', req, req.user!.id, {
         instrumentId: instrument._id,
         updatedFields: Object.keys(req.body),
@@ -51,7 +51,7 @@ export class InstrumentController {
 
   validateInstrument = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const isValid = await instrumentService.isInstrumentValid(req.params.id);
+      const isValid = await instrumentService.isInstrumentValid(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data: { isValid } });
     } catch (error) {
       next(error);

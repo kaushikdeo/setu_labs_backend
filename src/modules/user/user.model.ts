@@ -17,6 +17,7 @@ export interface IUser extends Document {
   name: string;
   passwordHash: string;
   role: UserRole;
+  organizationId: Types.ObjectId;
   customerId?: Types.ObjectId;
   refreshTokenHash: string | null;
   isActive: boolean;
@@ -32,6 +33,7 @@ const userSchema = new Schema<IUser>(
     name: { type: String, required: true, trim: true },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: Object.values(UserRole), default: UserRole.VALIDATION_ENGINEER },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     customerId: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
     refreshTokenHash: { type: String, default: null },
     isActive: { type: Boolean, default: true },

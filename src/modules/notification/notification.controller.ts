@@ -5,7 +5,7 @@ export class NotificationController {
   list = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const unreadOnly = req.query.unread === 'true';
-      const data = await notificationService.listForUser(req.user!.id, unreadOnly);
+      const data = await notificationService.listForUser(req.user!.id, req.user!.organizationId!, unreadOnly);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -14,7 +14,7 @@ export class NotificationController {
 
   markRead = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await notificationService.markRead(req.params.id, req.user!.id);
+      const data = await notificationService.markRead(req.params.id, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);

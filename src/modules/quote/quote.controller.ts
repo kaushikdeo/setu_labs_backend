@@ -13,16 +13,16 @@ function parseFilters(query: Request['query']): ListQuotesFilters {
 export class QuoteController {
   list = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.list(parseFilters(req.query));
+      const data = await quoteService.list(parseFilters(req.query), req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }
   };
 
-  pendingApprovals = async (_req: Request, res: Response, next: NextFunction) => {
+  pendingApprovals = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.pendingApprovals();
+      const data = await quoteService.pendingApprovals(req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -31,7 +31,7 @@ export class QuoteController {
 
   getById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.getById(req.params.id);
+      const data = await quoteService.getById(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -40,7 +40,7 @@ export class QuoteController {
 
   create = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.create(req.body, req.user!.id);
+      const data = await quoteService.create(req.body, req.user!.id, req.user!.organizationId!);
       res.status(201).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -49,7 +49,7 @@ export class QuoteController {
 
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.update(req.params.id, req.body);
+      const data = await quoteService.update(req.params.id, req.body, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -58,7 +58,7 @@ export class QuoteController {
 
   addLineItem = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.addLineItem(req.params.id, req.body);
+      const data = await quoteService.addLineItem(req.params.id, req.body, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -67,7 +67,12 @@ export class QuoteController {
 
   updateLineItem = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.updateLineItem(req.params.id, req.params.lineId, req.body);
+      const data = await quoteService.updateLineItem(
+        req.params.id,
+        req.params.lineId,
+        req.body,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -76,7 +81,11 @@ export class QuoteController {
 
   removeLineItem = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.removeLineItem(req.params.id, req.params.lineId);
+      const data = await quoteService.removeLineItem(
+        req.params.id,
+        req.params.lineId,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -85,7 +94,11 @@ export class QuoteController {
 
   reorderLineItems = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.reorderLineItems(req.params.id, req.body.orderedIds);
+      const data = await quoteService.reorderLineItems(
+        req.params.id,
+        req.body.orderedIds,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -94,7 +107,12 @@ export class QuoteController {
 
   submitForReview = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.submitForReview(req.params.id, req.body?.note, req.user!.id);
+      const data = await quoteService.submitForReview(
+        req.params.id,
+        req.body?.note,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -103,7 +121,12 @@ export class QuoteController {
 
   technicalAction = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.technicalAction(req.params.id, req.body, req.user!.id);
+      const data = await quoteService.technicalAction(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -112,7 +135,12 @@ export class QuoteController {
 
   managerAction = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.managerAction(req.params.id, req.body, req.user!.id);
+      const data = await quoteService.managerAction(
+        req.params.id,
+        req.body,
+        req.user!.id,
+        req.user!.organizationId!,
+      );
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -121,7 +149,7 @@ export class QuoteController {
 
   generatePdf = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.generatePdf(req.params.id);
+      const data = await quoteService.generatePdf(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -130,7 +158,10 @@ export class QuoteController {
 
   downloadPdf = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { buffer, filename } = await quoteService.streamPdf(req.params.id);
+      const { buffer, filename } = await quoteService.streamPdf(
+        req.params.id,
+        req.user!.organizationId!,
+      );
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
       res.status(200).send(buffer);
@@ -141,7 +172,7 @@ export class QuoteController {
 
   send = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.send(req.params.id, req.body, req.user!.id);
+      const data = await quoteService.send(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -150,7 +181,7 @@ export class QuoteController {
 
   revise = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.reviseFrom(req.params.id, req.user!.id);
+      const data = await quoteService.reviseFrom(req.params.id, req.user!.id, req.user!.organizationId!);
       res.status(201).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -159,7 +190,7 @@ export class QuoteController {
 
   accept = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.accept(req.params.id, req.body, req.user!.id);
+      const data = await quoteService.accept(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -168,7 +199,7 @@ export class QuoteController {
 
   reject = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await quoteService.reject(req.params.id, req.body, req.user!.id);
+      const data = await quoteService.reject(req.params.id, req.body, req.user!.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -177,7 +208,7 @@ export class QuoteController {
 
   remove = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await quoteService.remove(req.params.id);
+      await quoteService.remove(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, message: 'Quote deleted' });
     } catch (err) {
       next(err);

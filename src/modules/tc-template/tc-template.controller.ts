@@ -3,9 +3,9 @@ import { tcTemplateService } from './tc-template.service';
 import { TcOpportunityType } from './tc-template.model';
 
 export class TcTemplateController {
-  list = async (_req: Request, res: Response, next: NextFunction) => {
+  list = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await tcTemplateService.list();
+      const data = await tcTemplateService.list(req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -14,7 +14,7 @@ export class TcTemplateController {
 
   getById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await tcTemplateService.getById(req.params.id);
+      const data = await tcTemplateService.getById(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -23,7 +23,7 @@ export class TcTemplateController {
 
   getDefault = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await tcTemplateService.getDefaultForType(req.params.type as TcOpportunityType);
+      const data = await tcTemplateService.getDefaultForType(req.params.type as TcOpportunityType, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -32,7 +32,7 @@ export class TcTemplateController {
 
   create = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await tcTemplateService.create(req.body, req.user!.id);
+      const data = await tcTemplateService.create(req.body, req.user!.id, req.user!.organizationId!);
       res.status(201).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -41,7 +41,7 @@ export class TcTemplateController {
 
   update = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const data = await tcTemplateService.update(req.params.id, req.body);
+      const data = await tcTemplateService.update(req.params.id, req.body, req.user!.organizationId!);
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -50,7 +50,7 @@ export class TcTemplateController {
 
   remove = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await tcTemplateService.remove(req.params.id);
+      await tcTemplateService.remove(req.params.id, req.user!.organizationId!);
       res.status(200).json({ success: true, message: 'Template deleted' });
     } catch (err) {
       next(err);

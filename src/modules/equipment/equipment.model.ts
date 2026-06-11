@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
 export enum EquipmentStatus {
   ACTIVE = 'active',
@@ -22,6 +22,7 @@ export interface IEquipment extends Omit<Document, 'model'> {
   nextCalibrationDate?: Date;
   status: EquipmentStatus;
   notes?: string;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -48,6 +49,7 @@ const equipmentSchema = new Schema<IEquipment>(
       default: EquipmentStatus.ACTIVE,
     },
     notes: { type: String, trim: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

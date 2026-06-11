@@ -34,6 +34,7 @@ export interface IActivity extends Document {
   nextStep?: string;
   occurredAt: Date;
   metadata?: Record<string, unknown>;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -52,6 +53,7 @@ const activitySchema = new Schema<IActivity>(
     nextStep: { type: String, trim: true },
     occurredAt: { type: Date, required: true, default: () => new Date() },
     metadata: { type: Schema.Types.Mixed },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

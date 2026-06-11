@@ -25,6 +25,7 @@ export interface IVisit extends Document {
   assignedEngineerId: Types.ObjectId;
   status: VisitStatus;
   notes?: string;
+  organizationId?: Types.ObjectId | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -48,6 +49,7 @@ const visitSchema = new Schema<IVisit>(
       default: VisitStatus.SCHEDULED,
     },
     notes: { type: String, trim: true },
+    organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', default: null, index: true },
     createdBy: { type: String, required: true },
   },
   {

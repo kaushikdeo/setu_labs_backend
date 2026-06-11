@@ -18,6 +18,7 @@ const envSchema = Joi.object({
   JWT_EXPIRES_IN: Joi.string().default('15m'),
   REFRESH_TOKEN_SECRET: Joi.string().required(),
   REFRESH_TOKEN_EXPIRES_IN: Joi.string().default('7d'),
+  REGISTRATION_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   // Storage — exactly one provider's credentials must be present
   STORAGE_PROVIDER: Joi.string().valid('cloudinary', 's3', 'azure').default('cloudinary'),
   CLOUDINARY_CLOUD_NAME: Joi.when('STORAGE_PROVIDER', { is: 'cloudinary', then: Joi.string().required(), otherwise: Joi.string().allow('').optional() }),
@@ -47,6 +48,7 @@ export const env = {
   jwtExpiresIn: value.JWT_EXPIRES_IN as string,
   refreshTokenSecret: value.REFRESH_TOKEN_SECRET as string,
   refreshTokenExpiresIn: value.REFRESH_TOKEN_EXPIRES_IN as string,
+  registrationEnabled: value.REGISTRATION_ENABLED as boolean,
   // Storage
   storageProvider: value.STORAGE_PROVIDER as 'cloudinary' | 's3' | 'azure',
   cloudinaryCloudName: value.CLOUDINARY_CLOUD_NAME as string,
