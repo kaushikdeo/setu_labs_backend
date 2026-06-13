@@ -115,7 +115,7 @@ export interface IProspect extends Document {
 
 const prospectSchema = new Schema<IProspect>(
   {
-    code: { type: String, required: true, unique: true, trim: true },
+    code: { type: String, required: true, trim: true },
     leadId: { type: Schema.Types.ObjectId, ref: 'Lead', required: true, unique: true },
     leadCode: { type: String, trim: true },
     firstName: { type: String, required: true, trim: true },
@@ -199,5 +199,6 @@ prospectSchema.index(
   { firstName: 'text', lastName: 'text', company: 'text', mobile: 'text', email: 'text', code: 'text' },
   { name: 'prospect_search_idx' },
 );
+prospectSchema.index({ organizationId: 1, code: 1 }, { unique: true });
 
 export const ProspectModel = model<IProspect>('Prospect', prospectSchema);

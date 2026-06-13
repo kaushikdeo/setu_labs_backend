@@ -197,7 +197,7 @@ const milestoneSchema = new Schema<PaymentMilestone>(
 
 const opportunitySchema = new Schema<IOpportunity>(
   {
-    code: { type: String, required: true, unique: true, trim: true },
+    code: { type: String, required: true, trim: true },
     prospectId: { type: Schema.Types.ObjectId, ref: 'Prospect', default: null },
     prospectCode: { type: String, trim: true },
 
@@ -370,5 +370,6 @@ opportunitySchema.index(
   },
   { name: 'opportunity_search_idx' }
 );
+opportunitySchema.index({ organizationId: 1, code: 1 }, { unique: true });
 
 export const OpportunityModel = model<IOpportunity>('Opportunity', opportunitySchema);

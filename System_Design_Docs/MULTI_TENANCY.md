@@ -15,17 +15,27 @@ Wave 1 added optional `organizationId` fields and a migration script. Wave 2 bac
 - Self-registration (when enabled) creates stub org + `super_admin` user
 - Admin `createUser` inherits creator's `organizationId`
 - Cron jobs loop `getAllActiveOrgConfigs()`
-- Test type `code` is unique per org (`{ organizationId, code }`); on create an 8-char hex suffix is appended (e.g. `AIR_VELOCITY_TEST_a1b2c3d4`)
+- Entity `code` fields are unique per org (`{ organizationId, code }`), not globally
+- Sequential codes (`LD-`, `PR-`, `OPP-`, etc.) use org-scoped `srCounter` keys (`${organizationId}:lead`, etc.)
+- Test type `code` on create gets an 8-char hex suffix (e.g. `AIR_VELOCITY_TEST_a1b2c3d4`)
 
-### Index migration (test types)
+### Index migration (tenant-scoped codes)
 
 After deploy, run once per environment:
 
 ```bash
-pnpm script:migrate-test-type-index --confirm
+pnpm script:migrate-tenant-code-indexes --confirm
 ```
 
-Drops legacy global `code_1` index on `testtypes` that blocked duplicate codes across orgs.
+Drops legacy global `code_1` indexes on `leads`, `prospects`, `opportunities`, `visits`, `customers`, `equipment`, `masterinstruments`, and `testtypes`. Replaces them with compound `{ organizationId: 1, code: 1 }` unique indexes.
+
+`masterinstruments` also migrates `serialNumber` and `certificateNumber` to org-scoped unique indexes when no duplicate rows exist in the same org.
+
+Legacy single-collection script still available:
+
+```bash
+pnpm script:migrate-test-type-index --confirm
+```
 
 ### Clone test types between orgs
 

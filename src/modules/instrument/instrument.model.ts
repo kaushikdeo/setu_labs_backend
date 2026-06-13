@@ -32,13 +32,13 @@ export interface IMasterInstrument extends Omit<Document, 'model'> {
 const instrumentSchema = new Schema<IMasterInstrument>(
   {
     name: { type: String, required: true, trim: true },
-    code: { type: String, required: true, unique: true, trim: true },
-    serialNumber: { type: String, required: true, unique: true, trim: true },
+    code: { type: String, required: true, trim: true },
+    serialNumber: { type: String, required: true, trim: true },
     make: { type: String, required: true, trim: true },
     model: { type: String, required: true, trim: true },
     lastCalibrationDate: { type: Date, required: true },
     calibrationDueDate: { type: Date, required: true },
-    certificateNumber: { type: String, required: true, unique: true, trim: true },
+    certificateNumber: { type: String, required: true, trim: true },
     certificateFileUrl: { type: String, trim: true },
     certificateFilePublicId: { type: String, trim: true },
     accuracy: { type: String, trim: true },
@@ -65,5 +65,9 @@ const instrumentSchema = new Schema<IMasterInstrument>(
     },
   },
 );
+
+instrumentSchema.index({ organizationId: 1, code: 1 }, { unique: true });
+instrumentSchema.index({ organizationId: 1, serialNumber: 1 }, { unique: true });
+instrumentSchema.index({ organizationId: 1, certificateNumber: 1 }, { unique: true });
 
 export const MasterInstrumentModel = model<IMasterInstrument>('MasterInstrument', instrumentSchema);

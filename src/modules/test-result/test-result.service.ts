@@ -23,6 +23,7 @@ const calcRegistry: Record<string, CalcFn> = {
   particle_count: calcParticleCount,
   hepa_filter_integrity: calcHepaFilter,
   recovery_test: calcRecoveryTest,
+  air_flow_recovery_test: calcRecoveryTest,
 };
 
 function runCalculation(

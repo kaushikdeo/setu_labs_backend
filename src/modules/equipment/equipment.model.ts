@@ -31,7 +31,7 @@ export interface IEquipment extends Omit<Document, 'model'> {
 const equipmentSchema = new Schema<IEquipment>(
   {
     name: { type: String, required: true, trim: true },
-    code: { type: String, required: true, unique: true, trim: true },
+    code: { type: String, required: true, trim: true },
     equipmentType: { type: String, enum: ['equipment', 'area'], default: 'equipment' },
     serialNumber: { type: String, trim: true, default: '' },
     make: { type: String, trim: true, default: '' },
@@ -65,5 +65,6 @@ const equipmentSchema = new Schema<IEquipment>(
   },
 );
 
-// Index for faster lookups
+equipmentSchema.index({ organizationId: 1, code: 1 }, { unique: true });
+
 export const EquipmentModel = model<IEquipment>('Equipment', equipmentSchema);

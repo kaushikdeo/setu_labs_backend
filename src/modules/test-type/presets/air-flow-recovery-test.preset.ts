@@ -1,27 +1,25 @@
 import {
   RECOVERY_TEST_ACCEPTANCE_CRITERIA,
-  RECOVERY_TEST_CALCULATION_KEY,
+  AIR_FLOW_RECOVERY_CALCULATION_KEY,
   RECOVERY_TEST_HEADER_FIELDS,
-  RECOVERY_TEST_ISO_THRESHOLDS,
   RECOVERY_TEST_RESULT_SUMMARY_COLUMNS,
   RECOVERY_TEST_TABLE_COLUMNS,
 } from './recovery-test.shared';
 
-export { RECOVERY_TEST_ISO_THRESHOLDS };
-
-export const RECOVERY_TEST_PRESET = {
-  code: 'RECOVERY_TEST',
-  name: 'Recovery Test',
+export const AIR_FLOW_RECOVERY_TEST_PRESET = {
+  code: 'AIR_FLOW_RECOVERY_TEST_TEMPLATE',
+  name: 'Air Flow Recovery Test',
   description:
-    'Equipment recovery test after particle generation challenge. Captures initial, particle generation, and recovery period readings per ISO 14644-3 / NSF/ANSI 49.',
+    'Air flow equipment recovery test after particle generation challenge. Sectioned table with INITIAL, PARTICLE GENERATION, and RECOVERY PERIOD readings per ISO 14644-3 / NSF/ANSI 49.',
   category: 'validation' as const,
   requiredInstrumentType: 'Air Particle Counter',
   applicableEquipmentTypes: [
-    'Biosafety Cabinet',
     'Laminar Air Flow',
+    'Biosafety Cabinet',
     'Clean Air Room',
+    'Isolator',
   ],
-  calculationKey: RECOVERY_TEST_CALCULATION_KEY,
+  calculationKey: AIR_FLOW_RECOVERY_CALCULATION_KEY,
   showEquipmentDetails: false,
   showGraph: false,
   dueDateDays: 365,

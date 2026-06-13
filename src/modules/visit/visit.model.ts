@@ -33,7 +33,7 @@ export interface IVisit extends Document {
 
 const visitSchema = new Schema<IVisit>(
   {
-    code: { type: String, required: true, unique: true, trim: true },
+    code: { type: String, required: true, trim: true },
     srNumber: { type: String, trim: true },
     customerId: { type: Schema.Types.ObjectId, ref: 'Customer', required: true },
     siteId: { type: Schema.Types.ObjectId, ref: 'Site', required: true },
@@ -67,5 +67,6 @@ const visitSchema = new Schema<IVisit>(
 
 visitSchema.index({ customerId: 1, scheduledDate: -1 });
 visitSchema.index({ assignedEngineerId: 1, status: 1 });
+visitSchema.index({ organizationId: 1, code: 1 }, { unique: true });
 
 export const VisitModel = model<IVisit>('Visit', visitSchema);

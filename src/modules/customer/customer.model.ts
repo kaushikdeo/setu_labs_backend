@@ -50,7 +50,7 @@ export interface ICustomer extends Document {
 const customerSchema = new Schema<ICustomer>(
   {
     name: { type: String, required: true, trim: true },
-    code: { type: String, required: true, unique: true, trim: true },
+    code: { type: String, required: true, trim: true },
     industryType: { type: String, enum: Object.values(IndustryType), required: true },
     status: {
       type: String,
@@ -85,5 +85,7 @@ const customerSchema = new Schema<ICustomer>(
     },
   },
 );
+
+customerSchema.index({ organizationId: 1, code: 1 }, { unique: true });
 
 export const CustomerModel = model<ICustomer>('Customer', customerSchema);

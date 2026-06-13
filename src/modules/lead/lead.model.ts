@@ -122,7 +122,7 @@ export interface ILead extends Document {
 
 const leadSchema = new Schema<ILead>(
   {
-    code: { type: String, required: true, unique: true, trim: true },
+    code: { type: String, required: true, trim: true },
     firstName: { type: String, required: true, trim: true },
     lastName: { type: String, required: true, trim: true },
     mobile: { type: String, required: true, trim: true },
@@ -187,5 +187,6 @@ leadSchema.index(
   { firstName: 'text', lastName: 'text', company: 'text', mobile: 'text', email: 'text' },
   { name: 'lead_search_idx' },
 );
+leadSchema.index({ organizationId: 1, code: 1 }, { unique: true });
 
 export const LeadModel = model<ILead>('Lead', leadSchema);
