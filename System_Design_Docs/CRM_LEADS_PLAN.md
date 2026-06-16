@@ -336,7 +336,8 @@ Stale → Re-nurture campaign
 
 | Field name | Type | Required | Notes |
 |---|---|---|---|
-| Lead ID | Auto | System | Auto-generated (LD-0001) |
+| Lead ID | Auto | System | Human-readable code (`LD-0001`) per org |
+| UUID | Auto | System | Globally unique stable id (`uuid`, v4) for integrations |
 | First name | Text | Yes | — |
 | Last name | Text | Yes | — |
 | Mobile | Text | Yes | Primary contact, used for WhatsApp |

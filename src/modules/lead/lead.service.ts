@@ -1,7 +1,7 @@
 import { PipelineStage, Types } from 'mongoose';
 import { ILead, LeadModel, LeadStatus, LeadTemperature, FollowUpMode } from './lead.model';
 import { ILeadSegment, LeadSegmentModel } from './lead-segment.model';
-import { srCounterService } from '../sr-counter/sr-counter.service';
+import { createWithPrefixedCode } from '../sr-counter/code-sequence';
 import { followUpService } from '../follow-up/follow-up.service';
 import { activityService } from '../activity/activity.service';
 import { ActivityType } from '../activity/activity.model';
@@ -227,6 +227,7 @@ export class LeadService {
               $project: {
                 id: '$_id',
                 _id: 0,
+                uuid: 1,
                 code: 1,
                 firstName: 1,
                 lastName: 1,
@@ -327,6 +328,7 @@ export class LeadService {
         $project: {
           id: '$_id',
           _id: 0,
+          uuid: 1,
           code: 1,
           firstName: 1,
           lastName: 1,
@@ -376,18 +378,24 @@ export class LeadService {
   async create(data: Partial<ILead>, userId: string, organizationId: string): Promise<ILead> {
     if (!data.assignedUserId) throw new AppError(400, 'assignedUserId is required');
 
-    const seq = await srCounterService.nextSequence(`${organizationId}:lead`);
-    const code = `LD-${pad(seq)}`;
-
+    const counterKey = `${organizationId}:lead`;
     const now = new Date();
-    const lead = await LeadModel.create({
+    const payload = {
       ...normalizePayload(data),
-      code,
       organizationId: orgFilter(organizationId).organizationId,
       createdBy: userId,
       lastActivityAt: now,
-    });
-    logger.info('Lead created', { leadId: lead._id, code, createdBy: userId });
+    };
+
+    const lead = await createWithPrefixedCode<ILead>(
+      LeadModel,
+      organizationId,
+      'LD-',
+      counterKey,
+      (seq) => `LD-${pad(seq)}`,
+      payload,
+    );
+    logger.info('Lead created', { leadId: lead._id, code: lead.code, createdBy: userId });
     return lead;
   }
 
@@ -409,6 +417,7 @@ export class LeadService {
       updatedAt: _ignored5,
       createdBy: _ignored6,
       code: _ignored7,
+      uuid: _ignored8,
       ...updateData
     } = data as Record<string, unknown>;
 

@@ -24,7 +24,7 @@ import { AuthorityType, IProspect, ProspectModel } from '../prospect/prospect.mo
 import { activityService } from '../activity/activity.service';
 import { ActivityModel, ActivityType } from '../activity/activity.model';
 import { followUpService } from '../follow-up/follow-up.service';
-import { srCounterService } from '../sr-counter/sr-counter.service';
+import { createWithPrefixedCode } from '../sr-counter/code-sequence';
 import { AppError } from '../../utils/app-error';
 import { orgFilter } from '../../utils/tenant';
 import { logger } from '../../config/logger';
@@ -932,9 +932,7 @@ export class OpportunityService {
     });
     if (!prospect) throw new AppError(404, 'Prospect not found');
 
-    const seq = await srCounterService.nextSequence(`${organizationId}:opportunity`);
-    const code = `OPP-${pad(seq)}`;
-
+    const counterKey = `${organizationId}:opportunity`;
     const stage = OpportunityStage.SCOPE_DEFINED;
     const probability = STAGE_DEFAULT_PROBABILITY[stage];
     const dealValue = dto.dealValue ?? prospect.dealValue;
@@ -946,8 +944,7 @@ export class OpportunityService {
       : prospect.assignedUserId;
     const now = new Date();
 
-    const opp = await OpportunityModel.create({
-      code,
+    const opportunityPayload = {
       organizationId: orgFilter(organizationId).organizationId,
       prospectId: prospect._id,
       prospectCode: prospect.code,
@@ -1013,7 +1010,16 @@ export class OpportunityService {
       convertedAt: now,
       convertedBy: userId,
       createdBy: userId,
-    });
+    };
+
+    const opp = await createWithPrefixedCode<IOpportunity>(
+      OpportunityModel,
+      organizationId,
+      'OPP-',
+      counterKey,
+      (seq) => `OPP-${pad(seq)}`,
+      opportunityPayload,
+    );
 
     await activityService.logSystem(
       'opportunity',
@@ -1031,7 +1037,7 @@ export class OpportunityService {
     logger.info('Prospect converted to opportunity', {
       prospectId,
       opportunityId: opp._id,
-      code,
+      code: opp.code,
       by: userId,
     });
     return opp;
@@ -1042,8 +1048,7 @@ export class OpportunityService {
     userId: string,
     organizationId: string,
   ): Promise<IOpportunity> {
-    const seq = await srCounterService.nextSequence(`${organizationId}:opportunity`);
-    const code = `OPP-${pad(seq)}`;
+    const counterKey = `${organizationId}:opportunity`;
     const stage = OpportunityStage.SCOPE_DEFINED;
     const probability = STAGE_DEFAULT_PROBABILITY[stage];
     const dealValue = dto.dealValue ?? 0;
@@ -1052,8 +1057,7 @@ export class OpportunityService {
       ? new Types.ObjectId(dto.assignedUserId)
       : new Types.ObjectId(userId);
 
-    const opp = await OpportunityModel.create({
-      code,
+    const opportunityPayload = {
       organizationId: orgFilter(organizationId).organizationId,
       prospectId: null,
       prospectCode: undefined,
@@ -1113,7 +1117,16 @@ export class OpportunityService {
 
       lastActivityAt: now,
       createdBy: userId,
-    });
+    };
+
+    const opp = await createWithPrefixedCode<IOpportunity>(
+      OpportunityModel,
+      organizationId,
+      'OPP-',
+      counterKey,
+      (seq) => `OPP-${pad(seq)}`,
+      opportunityPayload,
+    );
 
     await activityService.logSystem(
       'opportunity',

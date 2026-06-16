@@ -16,6 +16,7 @@
     "script:verify-multi-tenant": "cross-env NODE_ENV=development ts-node --transpile-only scripts/verify-multi-tenant.ts",
     "script:migrate-test-type-index": "cross-env NODE_ENV=development ts-node --transpile-only scripts/migrate-test-type-index.ts",
     "script:migrate-tenant-code-indexes": "cross-env NODE_ENV=development ts-node --transpile-only scripts/migrate-tenant-code-indexes.ts",
+    "script:backfill-lead-uuid": "cross-env NODE_ENV=development ts-node --transpile-only scripts/backfill-lead-uuid.ts",
     "script:clone-test-types": "cross-env NODE_ENV=development ts-node --transpile-only scripts/clone-test-types.ts",
     "script:seed-recovery-test": "cross-env NODE_ENV=development ts-node --transpile-only scripts/seed-recovery-test-type.ts",
     "script:seed-air-flow-recovery-test": "cross-env NODE_ENV=development ts-node --transpile-only scripts/seed-air-flow-recovery-test-type.ts",

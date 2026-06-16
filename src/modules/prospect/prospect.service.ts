@@ -19,7 +19,7 @@ import {
 import { activityService } from '../activity/activity.service';
 import { ActivityType } from '../activity/activity.model';
 import { followUpService } from '../follow-up/follow-up.service';
-import { srCounterService } from '../sr-counter/sr-counter.service';
+import { createWithPrefixedCode } from '../sr-counter/code-sequence';
 import { AppError } from '../../utils/app-error';
 import { orgFilter } from '../../utils/tenant';
 import { logger } from '../../config/logger';
@@ -664,8 +664,7 @@ export class ProspectService {
     if (!lead) throw new AppError(404, 'Lead not found');
 
     const probability = dto.winProbability ?? STAGE_DEFAULT_PROBABILITY[dto.stage];
-    const seq = await srCounterService.nextSequence(`${organizationId}:prospect`);
-    const code = `PR-${pad(seq)}`;
+    const counterKey = `${organizationId}:prospect`;
 
     const assignedUserId = dto.assignedUserId
       ? new Types.ObjectId(dto.assignedUserId)
@@ -673,8 +672,7 @@ export class ProspectService {
 
     const now = new Date();
 
-    const prospect = await ProspectModel.create({
-      code,
+    const prospectPayload = {
       organizationId: orgFilter(organizationId).organizationId,
       leadId: lead._id,
       leadCode: lead.code,
@@ -717,7 +715,16 @@ export class ProspectService {
             nextFollowUpMode: lead.followUpMode ?? undefined,
           }
         : {}),
-    });
+    };
+
+    const prospect = await createWithPrefixedCode<IProspect>(
+      ProspectModel,
+      organizationId,
+      'PR-',
+      counterKey,
+      (seq) => `PR-${pad(seq)}`,
+      prospectPayload,
+    );
 
     await LeadModel.findOneAndUpdate(
       { _id: lead._id, ...orgFilter(organizationId) },
@@ -749,7 +756,12 @@ export class ProspectService {
 
     await this.autoTasksForStage(prospect, dto.stage, userId, organizationId);
 
-    logger.info('Lead converted to prospect', { leadId, prospectId: prospect._id, code, by: userId });
+    logger.info('Lead converted to prospect', {
+      leadId,
+      prospectId: prospect._id,
+      code: prospect.code,
+      by: userId,
+    });
     return prospect;
   }
 

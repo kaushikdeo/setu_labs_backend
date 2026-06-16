@@ -1,4 +1,5 @@
 import { Schema, model, Document, Types } from 'mongoose';
+import { randomUUID } from 'crypto';
 import { HoldReason } from '../crm-health/hold.types';
 
 export enum LeadSource {
@@ -78,6 +79,7 @@ export enum LeadProductInterest {
 }
 
 export interface ILead extends Document {
+  uuid: string;
   code: string;
   firstName: string;
   lastName: string;
@@ -122,6 +124,7 @@ export interface ILead extends Document {
 
 const leadSchema = new Schema<ILead>(
   {
+    uuid: { type: String, required: true, unique: true, default: () => randomUUID() },
     code: { type: String, required: true, trim: true },
     firstName: { type: String, required: true, trim: true },
     lastName: { type: String, required: true, trim: true },

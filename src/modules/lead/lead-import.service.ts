@@ -19,6 +19,7 @@ import {
 import { ILead, LeadModel } from './lead.model';
 import { UserModel } from '../user/user.model';
 import { srCounterService } from '../sr-counter/sr-counter.service';
+import { maxPrefixedCodeSequence } from '../sr-counter/code-sequence';
 import { AppError } from '../../utils/app-error';
 import { orgFilter } from '../../utils/tenant';
 import { logger } from '../../config/logger';
@@ -55,7 +56,7 @@ export interface ImportValidateResult {
 
 export interface ImportCommitResult {
   imported: number;
-  leads: Array<{ rowNumber: number; id: string; code: string }>;
+  leads: Array<{ rowNumber: number; id: string; uuid: string; code: string }>;
 }
 
 interface CachedImport {
@@ -455,10 +456,14 @@ export class LeadImportService {
     const created: ImportCommitResult['leads'] = [];
 
     try {
+      const counterKey = `${organizationId}:lead`;
+      const floor = await maxPrefixedCodeSequence(LeadModel, organizationId, 'LD-');
+      await srCounterService.ensureFloor(counterKey, floor, organizationId);
+
       for (let i = 0; i < cached.rows.length; i++) {
         const data = cached.rows[i];
         const rowNumber = cached.rowNumbers[i];
-        const seq = await srCounterService.nextSequence(`${organizationId}:lead`);
+        const seq = await srCounterService.nextSequence(counterKey, organizationId);
         const code = `LD-${pad(seq)}`;
         const now = new Date();
 
@@ -475,7 +480,7 @@ export class LeadImportService {
           { session },
         );
 
-        created.push({ rowNumber, id: String(lead._id), code });
+        created.push({ rowNumber, id: String(lead._id), uuid: lead.uuid, code });
       }
 
       await session.commitTransaction();
